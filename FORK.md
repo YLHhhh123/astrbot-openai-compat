@@ -53,6 +53,17 @@ See [Detailed changes](#详细改动) below.
 
 ---
 
+## Branches / 分支
+
+| Branch | Base | 说明 |
+|---|---|---|
+| `main` | v4.28.0 | 首个发布分支 |
+| `v4.28.2` | **v4.28.2**（`3c7adaf`） | 适配上游 v4.28.2，功能与 `main` 一致 |
+
+两个分支功能相同，区别只是基线版本。新安装建议用 `v4.28.2`。
+
+---
+
 ## Changelog after first release
 
 ### `b03231a4` — fix: `persona_id` is now effective on the pipeline path
