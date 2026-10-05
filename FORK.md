@@ -53,6 +53,50 @@ See [Detailed changes](#详细改动) below.
 
 ---
 
+## Changelog after first release
+
+### `b03231a4` — fix: `persona_id` is now effective on the pipeline path
+
+**Problem.** With `persona_id` configured in `openai_compat.json`, requests still
+answered with a generic assistant persona. Root cause chain:
+
+1. Requests without `tools` go through the **AstrBot pipeline**, not this fork's
+   direct-provider path, so `resolve_persona_prompt()` is never reached.
+2. The pipeline resolves personas via `PersonaManager.resolve_selected_persona()`,
+   which only reads **session rules** (`sp` / `session_service_config`) and the
+   **config profile** (`agent_runner.config.persona.persona_id`) — it never reads
+   `openai_compat.json`.
+3. With neither set, `persona_id` degrades to `"default"`, which matches no entry
+   in `personas_v3`, so an empty default persona is used.
+
+An earlier attempt to write the persona into session rules failed silently: it
+imported `sp` from `astrbot.core.utils` (wrong path) and awaited the synchronous,
+deprecated `sp.put`. That code has been removed.
+
+**Fix.** Pass the configured persona through the webchat hop and override the
+pipeline's resolution:
+
+| File | Change |
+|---|---|
+| `astr_main_agent.py` | Honour event extra `_forced_persona_id`, override the resolved persona |
+| `webchat_adapter.py` | Carry `_forced_persona_id` from the webchat payload into event extras |
+| `open_api_service.py` | Forward `post_data` keys starting with `_` to the webchat queue |
+| `openai_compat_service.py` | Send `persona_id` in `post_data` |
+
+**Verified** on a clean instance (all third-party plugins disabled, only the two
+internal plugins loaded, 2 personas, 9 models):
+
+```
+你是谁？ → （突然跳出，拍着胸脯，眼神闪亮）嗷！我是往生堂第七十七代堂主胡桃！...
+```
+
+The same prompt answered `我是你的系统思考伙伴…` before the fix.
+
+Also in this commit: the **API Services** dashboard page (auth rules, base URL,
+key CRUD, endpoint list) and navigation strings for four languages.
+
+---
+
 ## 详细改动
 
 ### 一、内核原生 OpenAI 兼容 API
