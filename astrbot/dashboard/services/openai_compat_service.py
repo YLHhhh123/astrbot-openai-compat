@@ -644,6 +644,9 @@ class OpenAICompatService:
             "_extra_allowed_plugins": list(key.allow_plugins),
             # 客户端工具（外部工具）：管道会声明给模型，被调用时拦截回传客户端
             "_client_tools": body.get("tools") or [],
+            # 强制人格：内核 resolve_selected_persona 不读本服务配置，
+            # 由 astr_main_agent 读取此 extra 并覆盖解析结果
+            "_forced_persona_id": str(config.get("persona_id") or ""),
         }
 
         result = ChatRunResult()
@@ -807,7 +810,14 @@ class OpenAICompatService:
         persona: Any = None
         try:
             if forced_id:
-                persona = persona_mgr.get_persona_v3_by_id(forced_id)
+                # v4 人格（存于 personas 表，字段 system_prompt）
+                try:
+                    persona = await persona_mgr.get_persona(forced_id)
+                except Exception:
+                    persona = None
+                if persona is None:
+                    # 回落到 v3 人格（内存列表，字段 prompt）
+                    persona = persona_mgr.get_persona_v3_by_id(forced_id)
                 if persona is None:
                     logger.warning(
                         "配置的人格 id `%s` 不存在，回落到自动解析", forced_id
@@ -826,9 +836,16 @@ class OpenAICompatService:
         if not persona:
             return None
         if isinstance(persona, dict):
-            prompt = str(persona.get("prompt") or "")
+            # v4 用 system_prompt，v3 用 prompt
+            prompt = str(
+                persona.get("system_prompt") or persona.get("prompt") or ""
+            )
         else:
-            prompt = str(getattr(persona, "prompt", "") or "")
+            prompt = str(
+                getattr(persona, "system_prompt", "")
+                or getattr(persona, "prompt", "")
+                or ""
+            )
         return prompt.strip() or None
 
     @staticmethod
@@ -981,6 +998,13 @@ class OpenAICompatService:
         self._apply_persona_to_contexts(contexts, persona_prompt)
 
         toolset = self._build_client_toolset(body.get("tools"))
+
+        logger.info(
+            "[openai_compat] 直连注入调试：persona=%r 长度=%s contexts=%s",
+            (persona_prompt or "")[:24],
+            len(persona_prompt or ""),
+            [(item.get("role"), str(item.get("content"))[:24]) for item in contexts],
+        )
 
         kwargs: dict[str, Any] = {"contexts": contexts, "func_tool": toolset}
         tool_choice = body.get("tool_choice")

@@ -65,3 +65,6 @@ GenieData/
 .worktrees/
 
 dashboard/bun.lock
+run.log
+req-nojieba.txt
+req-nowheel.txt

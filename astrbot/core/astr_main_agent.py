@@ -551,6 +551,30 @@ async def _ensure_persona_and_skills(
         provider_settings=cfg,
     )
 
+    # OpenAI 兼容入口可在自身配置里强制指定人格。
+    # 内核的 resolve_selected_persona 只认会话规则 / 配置档案，
+    # 不读该入口的配置，故在此按 extra 覆盖，使该入口的人格稳定可控。
+    forced_persona_id = str(event.get_extra("_forced_persona_id") or "").strip()
+    if forced_persona_id:
+        forced = next(
+            (
+                item
+                for item in getattr(
+                    plugin_context.persona_manager, "personas_v3", []
+                )
+                if item.get("name") == forced_persona_id
+            ),
+            None,
+        )
+        if forced is not None:
+            persona_id = forced_persona_id
+            persona = forced
+            use_webchat_special_default = False
+        else:
+            logger.warning(
+                "强制人格 `%s` 不存在，回落到自动解析", forced_persona_id
+            )
+
     set_persona_custom_error_message_on_event(
         event, extract_persona_custom_error_message_from_persona(persona)
     )

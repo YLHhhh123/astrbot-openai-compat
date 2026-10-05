@@ -301,6 +301,12 @@ class WebChatAdapter(Platform):
                     register_external_tools(
                         message_event, tool_names_of(client_tools)
                     )
+                # 强制人格（OpenAI 兼容入口配置）：内核按此覆盖人格解析结果
+                forced_persona = payload.get("_forced_persona_id")
+                if forced_persona:
+                    message_event.set_extra(
+                        "_forced_persona_id", str(forced_persona)
+                    )
 
         return message_event
 
