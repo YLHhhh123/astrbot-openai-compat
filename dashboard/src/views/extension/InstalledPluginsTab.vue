@@ -1,4 +1,5 @@
 <script setup>
+import PluginCategoryPanel from "@/components/extension/PluginCategoryPanel.vue";
 import ExtensionCard from "@/components/shared/ExtensionCard.vue";
 import { normalizeTextInput } from "@/utils/inputValue";
 import {
@@ -265,6 +266,8 @@ const togglePinnedExtension = (extension) => {
         </div>
       </div>
     </div>
+
+    <PluginCategoryPanel />
 
     <v-card
       v-if="failedPluginItems.length > 0"

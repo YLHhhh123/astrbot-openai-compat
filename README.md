@@ -1,3 +1,18 @@
+> ## ⚠️ 非官方 AI 修改分支 / Unofficial AI-Modified Fork
+>
+> 本仓库是 [AstrBotDevs/AstrBot](https://github.com/AstrBotDevs/AstrBot) 的**非官方分支**，
+> **全部改动由 AI 生成**（WorkBuddy / Claude），在人工需求指导下完成，**未经上游审核**。
+>
+> - **上游仓库 Upstream**：https://github.com/AstrBotDevs/AstrBot
+> - **基线 Baseline**：v4.28.0（commit `a412146`）
+> - **协议 License**：GNU AGPL-3.0（**保持不变**，原作者版权声明完整保留）
+> - **改动说明与免责声明**：[FORK.md](FORK.md)
+> - **仅在本地 mock 层自测，未在真实机器人验证**，请勿直接用于生产环境
+>
+> **请勿将本分支的问题反馈到上游仓库。** 本分支与 AstrBot 团队无关。
+
+---
+
 ![AstrBot-Logo-Simplified](https://github.com/user-attachments/assets/36fb04e4-cc75-4454-bd8b-049d11aa86f9)
 
 

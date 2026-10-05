@@ -51,6 +51,11 @@ from ..context.compressor import ContextCompressor
 from ..context.config import ContextConfig
 from ..context.manager import ContextManager
 from ..context.token_counter import EstimateTokenCounter, TokenCounter
+from ..external_tools import (
+    ExternalToolCallPending,
+    event_of,
+    external_tool_names_of,
+)
 from ..hooks import BaseAgentRunHooks
 from ..message import (
     AssistantMessageSegment,
@@ -1003,6 +1008,20 @@ class ToolLoopAgentRunner(BaseAgentRunner[TContext]):
             except _ToolExecutionInterrupted:
                 yield await self._finalize_aborted_step()
                 return
+            except ExternalToolCallPending as exc:
+                # 外部工具（客户端执行）待处理：结束本轮 loop。
+                # 调用方按 chain_type="external_tool_calls" 识别本轮结束并回传客户端。
+                self.stats.end_time = time.time()
+                yield AgentResponse(
+                    type="external_tool_calls",
+                    data=AgentResponseData(
+                        chain=MessageChain(
+                            type="external_tool_calls",
+                            chain=[Json(data={"calls": exc.calls})],
+                        )
+                    ),
+                )
+                return
 
             # 将结果添加到上下文中
             parts = []
@@ -1115,12 +1134,38 @@ class ToolLoopAgentRunner(BaseAgentRunner[TContext]):
                 ),
             )
 
+        # 外部工具（由客户端执行）登记：参与 function calling，但服务端不执行
+        external_names = external_tool_names_of(event_of(self.run_context))
+        turn_names = [str(name) for name in (llm_response.tools_call_name or [])]
+        has_server_tool = any(name not in external_names for name in turn_names)
+        external_calls: list[dict] = []
+
         # 执行函数调用
         for func_tool_name, func_tool_args, func_tool_id in zip(
             llm_response.tools_call_name,
             llm_response.tools_call_args,
             llm_response.tools_call_ids,
         ):
+            # 外部工具：本轮不执行、不产生真实结果，交由客户端执行
+            if func_tool_name in external_names:
+                external_calls.append(
+                    {
+                        "id": str(func_tool_id),
+                        "name": str(func_tool_name),
+                        "arguments": func_tool_args,
+                    }
+                )
+                if has_server_tool:
+                    # 混合轮：写入占位结果，引导模型下一轮单独调用，
+                    # 使后续轮次自然收敛为「纯外部轮」，避免上下文错位
+                    _append_tool_call_result(
+                        str(func_tool_id),
+                        f"error: tool `{func_tool_name}` runs on the client side and "
+                        "cannot run in the same turn as server-side tools; "
+                        "call it alone in your next turn, or answer directly.",
+                    )
+                continue
+
             tool_result_blocks_start = len(tool_call_result_blocks)
             tool_call_streak = self._track_tool_call_streak(
                 func_tool_name,
@@ -1358,6 +1403,10 @@ class ToolLoopAgentRunner(BaseAgentRunner[TContext]):
                     )
                 )
                 logger.info(f"Tool `{func_tool_name}` Result: {tool_result_content}")
+
+        if external_calls and not has_server_tool:
+            # 纯外部轮：中断本轮 loop，交由调用方（HTTP 层）回传客户端执行
+            raise ExternalToolCallPending(external_calls)
 
         # 处理函数调用响应
         if tool_call_result_blocks:

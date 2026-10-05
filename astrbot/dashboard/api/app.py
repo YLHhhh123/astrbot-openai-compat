@@ -32,8 +32,13 @@ from astrbot.dashboard.services.knowledge_base_service import KnowledgeBaseServi
 from astrbot.dashboard.services.live_chat_service import LiveChatService
 from astrbot.dashboard.services.log_service import LogService
 from astrbot.dashboard.services.open_api_service import OpenApiService
+from astrbot.dashboard.services.openai_compat_service import (
+    OpenAICompatError,
+    OpenAICompatService,
+)
 from astrbot.dashboard.services.persona_service import PersonaService
 from astrbot.dashboard.services.platform_service import PlatformService
+from astrbot.dashboard.services.plugin_category_service import PluginCategoryService
 from astrbot.dashboard.services.plugin_page_service import PluginPageService
 from astrbot.dashboard.services.plugin_service import PluginService
 from astrbot.dashboard.services.session_management_service import (
@@ -64,8 +69,11 @@ from .files import legacy_router as legacy_files_router
 from .knowledge_bases import legacy_router as legacy_knowledge_bases_router
 from .live_chat import legacy_router as legacy_live_chat_router
 from .logs import legacy_router as legacy_logs_router
+from .openai_compat import admin_router as openai_compat_admin_router
+from .openai_compat import v1_router as openai_compat_v1_router
 from .personas import legacy_router as legacy_personas_router
 from .platform import legacy_router as legacy_platform_router
+from .plugin_categories import router as plugin_categories_router
 from .plugins import legacy_router as legacy_plugins_router
 from .providers import legacy_router as legacy_providers_router
 from .router import API_V1_PREFIX, build_api_router
@@ -100,6 +108,8 @@ def create_dashboard_asgi_app(
     app.state.jwt_secret = jwt_secret
     app.state.dashboard_static_folder = static_folder
     log_broker = getattr(core_lifecycle, "log_broker", None) or LogBroker()
+    chat_service = ChatService(db, core_lifecycle)
+    open_api_service = OpenApiService(db, core_lifecycle)
     app.state.services = SimpleNamespace(
         config_profiles=ConfigProfileService(core_lifecycle, db),
         config_display=ConfigDisplayService(core_lifecycle),
@@ -108,7 +118,7 @@ def create_dashboard_asgi_app(
         api_keys=ApiKeyService(db),
         auth=AuthService(db, core_lifecycle.astrbot_config),
         backups=BackupService(db, core_lifecycle),
-        chat=ChatService(db, core_lifecycle),
+        chat=chat_service,
         chat_projects=ChatUIProjectService(db),
         commands=CommandService(core_lifecycle.astrbot_config, core_lifecycle),
         conversations=ConversationService(db, core_lifecycle),
@@ -122,11 +132,18 @@ def create_dashboard_asgi_app(
         providers=ProviderConfigService(core_lifecycle),
         personas=PersonaService(core_lifecycle),
         plugins=PluginService(core_lifecycle, core_lifecycle.plugin_manager),
+        plugin_categories=PluginCategoryService(core_lifecycle),
         plugin_pages=PluginPageService(
             core_lifecycle.plugin_manager,
             core_lifecycle=core_lifecycle,
         ),
-        open_api=OpenApiService(db, core_lifecycle),
+        open_api=open_api_service,
+        openai_compat=OpenAICompatService(
+            db,
+            core_lifecycle,
+            open_api_service,
+            chat_service,
+        ),
         sessions=SessionManagementService(core_lifecycle, db),
         skills=SkillsService(core_lifecycle),
         stats=StatService(db, core_lifecycle, core_lifecycle.astrbot_config),
@@ -142,6 +159,12 @@ def create_dashboard_asgi_app(
             clear_site_data_headers=CLEAR_SITE_DATA_HEADERS,
         ),
     )
+
+    @app.exception_handler(OpenAICompatError)
+    async def openai_compat_error_handler(
+        _request: Request, exc: OpenAICompatError
+    ):
+        return JSONResponse(exc.to_body(), status_code=exc.status)
 
     @app.exception_handler(ApiError)
     async def api_error_handler(_request: Request, exc: ApiError):
@@ -206,5 +229,9 @@ def create_dashboard_asgi_app(
     app.include_router(legacy_personas_router)
     app.include_router(legacy_updates_router)
     app.include_router(build_api_router())
+    # OpenAI 兼容：管理面挂 /api/v1/openai-compat，协议面挂 /v1
+    app.include_router(openai_compat_admin_router, prefix=API_V1_PREFIX)
+    app.include_router(openai_compat_v1_router)
+    app.include_router(plugin_categories_router, prefix=API_V1_PREFIX)
     app.include_router(static_files_router)
     return app
