@@ -60,6 +60,10 @@ class SessionPluginManager:
             List: 过滤后的处理器列表
 
         """
+        # 延迟导入：astrbot.core.star 包内部存在相互引用，顶层导入会形成环
+        from astrbot.core.star.plugin_category_manager import (
+            PluginCategoryManager,
+        )
         from astrbot.core.star.star import star_map
 
         session_id = event.unified_msg_origin
@@ -73,6 +77,13 @@ class SessionPluginManager:
         )
         session_config = session_plugin_config.get(session_id, {})
         disabled_plugins = session_config.get("disabled_plugins", [])
+
+        # 入口（平台 / 特殊入口）+ 插件类别策略，一次取齐供本轮复用
+        category_context = await PluginCategoryManager.build_context()
+        entry = PluginCategoryManager.entry_of(event)
+        extra_plugins, extra_categories = (
+            PluginCategoryManager.extra_allowed_from_event(event)
+        )
 
         for handler in handlers:
             # 获取处理器对应的插件
@@ -96,7 +107,24 @@ class SessionPluginManager:
                     f"Plugin {plugin.name} is disabled in session {session_id}; "
                     f"skipping handler {handler.handler_name}.",
                 )
-            else:
-                filtered_handlers.append(handler)
+                continue
+
+            # 入口类别过滤：功能性 / 互动性
+            declared = getattr(plugin, "category", None)
+            if not PluginCategoryManager.is_allowed(
+                entry=entry,
+                plugin_name=plugin.name,
+                declared=declared,
+                context=category_context,
+                extra_plugins=extra_plugins,
+                extra_categories=extra_categories,
+            ):
+                logger.debug(
+                    f"Plugin {plugin.name} [{declared or 'default'}] is not allowed "
+                    f"at entry '{entry}'; skipping handler {handler.handler_name}.",
+                )
+                continue
+
+            filtered_handlers.append(handler)
 
         return filtered_handlers

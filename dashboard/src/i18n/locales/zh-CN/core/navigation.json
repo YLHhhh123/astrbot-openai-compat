@@ -13,6 +13,7 @@
     "trace": "追踪"
   },
   "subagent": "子代理编排",
+  "apiServices": "API 服务",
   "toolUse": "MCP",
   "extension": "插件",
   "extensionTabs": {

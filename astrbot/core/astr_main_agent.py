@@ -547,6 +547,30 @@ async def _ensure_persona_and_skills(
         provider_settings=cfg,
     )
 
+    # OpenAI 兼容入口可在自身配置里强制指定人格。
+    # 内核的 resolve_selected_persona 只认会话规则 / 配置档案，
+    # 不读该入口的配置，故在此按 extra 覆盖，使该入口的人格稳定可控。
+    forced_persona_id = str(event.get_extra("_forced_persona_id") or "").strip()
+    if forced_persona_id:
+        forced = next(
+            (
+                item
+                for item in getattr(
+                    plugin_context.persona_manager, "personas_v3", []
+                )
+                if item.get("name") == forced_persona_id
+            ),
+            None,
+        )
+        if forced is not None:
+            persona_id = forced_persona_id
+            persona = forced
+            use_webchat_special_default = False
+        else:
+            logger.warning(
+                "强制人格 `%s` 不存在，回落到自动解析", forced_persona_id
+            )
+
     set_persona_custom_error_message_on_event(
         event, extract_persona_custom_error_message_from_persona(persona)
     )
@@ -615,6 +639,38 @@ async def _ensure_persona_and_skills(
         req.func_tool = persona_toolset
     else:
         req.func_tool.merge(persona_toolset)
+
+    # 按入口（平台 / 特殊入口）与插件类别裁剪 LLM 工具：
+    # 互动性插件在受限入口（个人微信 openclaw、OpenAI 兼容 HTTP 接口）不参与调用。
+    # 延迟导入：astrbot.core.star 包内部存在相互引用。
+    try:
+        from astrbot.core.star.plugin_category_manager import (
+            PluginCategoryManager,
+        )
+
+        await PluginCategoryManager.filter_toolset_by_entry(req.func_tool, event)
+    except Exception as exc:
+        logger.warning("按入口裁剪 LLM 工具失败：%s", exc)
+
+    # 合并客户端传入的工具（HTTP 入口带 tools 时）：
+    # 这些工具由**客户端执行**，服务端仅向模型声明、并在被调用时拦截回传。
+    # 放在类别裁剪之后，避免客户端工具被入口策略误裁。
+    try:
+        from astrbot.core.agent.external_tools import (
+            build_toolset,
+            external_tool_defs_of,
+        )
+
+        external_defs = external_tool_defs_of(event)
+        if external_defs:
+            external_toolset = build_toolset(external_defs)
+            if external_toolset is not None:
+                if not req.func_tool:
+                    req.func_tool = external_toolset
+                else:
+                    req.func_tool.merge(external_toolset)
+    except Exception as exc:
+        logger.warning("合并客户端工具失败：%s", exc)
 
     # sub agents integration
     orch_cfg = plugin_context.get_config().get("subagent_orchestrator", {})

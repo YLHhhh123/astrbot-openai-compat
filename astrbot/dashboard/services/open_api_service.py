@@ -421,6 +421,14 @@ class OpenApiService:
         back_queue = webchat_queue_mgr.get_or_create_back_queue(message_id, session_id)
         try:
             chat_queue = webchat_queue_mgr.get_or_create_queue(session_id)
+            # post_data 里以下划线开头的键是调用方的私有元数据（如
+            # openai_compat 的 _forced_persona_id / _extra_allowed_plugins），
+            # 按约定透传给 webchat 适配器，由其写入 event extra。
+            extra_meta = {
+                key: value
+                for key, value in post_data.items()
+                if key.startswith("_")
+            }
             await chat_queue.put(
                 (
                     effective_username,
@@ -432,6 +440,7 @@ class OpenApiService:
                         "flags": flags,
                         "message_id": message_id,
                         "_api_key_allow_admin_role": allow_admin_username,
+                        **extra_meta,
                     },
                 )
             )

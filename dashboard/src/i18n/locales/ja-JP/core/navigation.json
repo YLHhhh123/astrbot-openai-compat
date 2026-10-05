@@ -13,6 +13,7 @@
     "trace": "トレース"
   },
   "subagent": "サブエージェント編成",
+  "apiServices": "API サービス",
   "toolUse": "MCP",
   "extension": "プラグイン",
   "extensionTabs": {

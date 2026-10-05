@@ -75,6 +75,13 @@ class StarMetadata:
     pages: list[dict] = field(default_factory=list)
     """插件注册的 Pages 元数据。"""
 
+    category: str | None = None
+    """插件类别：``functional``（功能性）/ ``interactive``（互动性）。
+
+    ``None`` 视为 ``interactive``（保守默认：互动性插件依赖平台社交能力，
+    误判为功能性会在受限入口崩溃）。
+    """
+
     @property
     def plugin_id(self) -> str:
         p_name = (self.name or "unknown").lower().replace("/", "_")

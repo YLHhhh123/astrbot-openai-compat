@@ -130,6 +130,11 @@ const MainRoutes = {
       redirect: { name: 'ExtensionMarketplace' }
     },
     {
+      name: 'ApiServices',
+      path: '/api-services',
+      component: () => import('@/views/ApiServicesPage.vue')
+    },
+    {
       name: 'Platforms',
       path: '/platforms',
       component: () => import('@/views/PlatformPage.vue')

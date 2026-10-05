@@ -277,6 +277,36 @@ class WebChatAdapter(Platform):
                         "_api_key_allow_admin_role",
                         api_key_allow_admin_role,
                     )
+                # 入口标识与按入口额外放行的插件
+                # （由 OpenAI 兼容接口等受限入口写入，供插件类别策略判定）
+                entry = payload.get("_entry")
+                if isinstance(entry, str) and entry.strip():
+                    message_event.set_extra("_entry", entry.strip())
+                extra_plugins = payload.get("_extra_allowed_plugins")
+                if isinstance(extra_plugins, list):
+                    message_event.set_extra(
+                        "_extra_allowed_plugins",
+                        [str(item) for item in extra_plugins if str(item).strip()],
+                    )
+                # 客户端工具（外部工具）：参与 function calling 但由客户端执行
+                client_tools = payload.get("_client_tools")
+                if isinstance(client_tools, list) and client_tools:
+                    from astrbot.core.agent.external_tools import (
+                        register_external_tool_defs,
+                        register_external_tools,
+                        tool_names_of,
+                    )
+
+                    register_external_tool_defs(message_event, client_tools)
+                    register_external_tools(
+                        message_event, tool_names_of(client_tools)
+                    )
+                # 强制人格（OpenAI 兼容入口配置）：内核按此覆盖人格解析结果
+                forced_persona = payload.get("_forced_persona_id")
+                if forced_persona:
+                    message_event.set_extra(
+                        "_forced_persona_id", str(forced_persona)
+                    )
 
         return message_event
 
