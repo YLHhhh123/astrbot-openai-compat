@@ -1,0 +1,92 @@
+{
+  "top_admin_ids": {
+    "description": "最高超管 ID 列表",
+    "type": "text",
+    "hint": "逗号分隔用户 ID（如 123456,789012）。最高超管可用 /setop，建议把自己填在这里。留空则所有人均为普通成员",
+    "default": ""
+  },
+  "mid_admin_ids": {
+    "description": "中级超管 ID 列表",
+    "type": "text",
+    "hint": "逗号分隔用户 ID。中级超管可用 /op，但对最高超管无效",
+    "default": ""
+  },
+  "normal_admin_ids": {
+    "description": "普通超管 ID 列表",
+    "type": "text",
+    "hint": "逗号分隔用户 ID。普通超管对最高/中级超管无效",
+    "default": ""
+  },
+  "top_admin_commands": {
+    "description": "最高超管可用指令",
+    "type": "text",
+    "hint": "留空=全部可用；填\"禁用\"=全部不可用；否则填逗号分隔的指令名名单（子命令写\"plugin ls\"）",
+    "default": ""
+  },
+  "top_admin_forbidden_plugins": {
+    "description": "禁止最高超管使用的插件",
+    "type": "text",
+    "hint": "填插件名，逗号分隔；命中即禁止该插件全部指令。留空=不禁止",
+    "default": ""
+  },
+  "mid_admin_commands": {
+    "description": "中级超管可用指令",
+    "type": "text",
+    "hint": "留空=全部可用；填\"禁用\"=全部不可用；否则填逗号分隔的指令名名单（子命令写\"plugin ls\"）",
+    "default": ""
+  },
+  "mid_admin_forbidden_plugins": {
+    "description": "禁止中级超管使用的插件",
+    "type": "text",
+    "hint": "填插件名，逗号分隔；命中即禁止该插件全部指令。留空=不禁止",
+    "default": ""
+  },
+  "normal_admin_commands": {
+    "description": "普通超管可用指令",
+    "type": "text",
+    "hint": "留空=全部可用；填\"禁用\"=全部不可用；否则填逗号分隔的指令名名单（子命令写\"plugin ls\"）",
+    "default": ""
+  },
+  "normal_admin_forbidden_plugins": {
+    "description": "禁止普通超管使用的插件",
+    "type": "text",
+    "hint": "填插件名，逗号分隔；命中即禁止该插件全部指令。留空=不禁止",
+    "default": ""
+  },
+  "group_owner_commands": {
+    "description": "群主可用指令",
+    "type": "text",
+    "hint": "留空=全部可用；填\"禁用\"=全部不可用；否则填逗号分隔的指令名名单（子命令写\"plugin ls\"）",
+    "default": ""
+  },
+  "group_owner_forbidden_plugins": {
+    "description": "禁止群主使用的插件",
+    "type": "text",
+    "hint": "填插件名，逗号分隔；命中即禁止该插件全部指令。留空=不禁止",
+    "default": ""
+  },
+  "group_admin_commands": {
+    "description": "群聊管理员可用指令",
+    "type": "text",
+    "hint": "留空=全部可用；填\"禁用\"=全部不可用；否则填逗号分隔的指令名名单（子命令写\"plugin ls\"）",
+    "default": ""
+  },
+  "group_admin_forbidden_plugins": {
+    "description": "禁止群聊管理员使用的插件",
+    "type": "text",
+    "hint": "填插件名，逗号分隔；命中即禁止该插件全部指令。留空=不禁止",
+    "default": ""
+  },
+  "member_commands": {
+    "description": "普通成员可用指令",
+    "type": "text",
+    "hint": "留空=全部可用；填\"禁用\"=全部不可用；否则填逗号分隔的指令名名单（子命令写\"plugin ls\"）",
+    "default": ""
+  },
+  "member_forbidden_plugins": {
+    "description": "禁止普通成员使用的插件",
+    "type": "text",
+    "hint": "填插件名，逗号分隔；命中即禁止该插件全部指令。留空=不禁止",
+    "default": ""
+  }
+}
