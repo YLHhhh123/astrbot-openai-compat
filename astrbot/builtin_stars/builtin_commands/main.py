@@ -37,13 +37,20 @@ class Main(star.Star):
         # 走标准插件配置机制：data/config/builtin_commands_config.json
         # （内核在存在 _conf_schema.json 时以 config= 传入）
         if config is None:
+            from pathlib import Path
+
             from astrbot.core.config import AstrBotConfig
             from astrbot.core.utils.astrbot_path import get_astrbot_config_path
 
+            from .tier_api import load_builtin_schema
+
+            # 必须传 schema，否则 AstrBotConfig 会回退到主配置 cmd_config.json
             config = AstrBotConfig(
                 config_path=str(
-                    get_astrbot_config_path() / "builtin_commands_config.json"
+                    Path(str(get_astrbot_config_path()))
+                    / "builtin_commands_config.json"
                 ),
+                schema=load_builtin_schema(),
             )
         self._cfg = config
         self.config = dict(config) if not isinstance(config, dict) else dict(config)
