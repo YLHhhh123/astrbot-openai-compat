@@ -68,3 +68,11 @@ dashboard/bun.lock
 run.log
 req-nojieba.txt
 req-nowheel.txt
+run4282.log
+webui_dist/
+data/*
+!data/plugins/
+data/plugins/*
+!data/plugins/astrbot_plugin_chat_commands/
+
+# 新增的内置会话指令集插件（随仓库分发）

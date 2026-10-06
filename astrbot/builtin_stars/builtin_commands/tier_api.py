@@ -79,6 +79,51 @@ async def sync_tier_ids(config) -> None:
     await sp.global_put(_KEY, data)
 
 
+def load_tier_config(context) -> dict:
+    """读取内置插件的分级配置，返回普通 dict。
+
+    供**其他模块**（如会话指令集插件）复用同一份权限配置，避免各自读文件。
+    内置插件自身通过构造参数拿到 ``AstrBotConfig`` 实例（可写），这里只给只读快照。
+    """
+    from pathlib import Path
+
+    from astrbot.core.config import AstrBotConfig
+    from astrbot.core.utils.astrbot_path import get_astrbot_config_path
+
+    try:
+        # 必须传 schema，否则 AstrBotConfig 会回退到主配置 cmd_config.json
+        cfg = AstrBotConfig(
+            config_path=str(
+                Path(str(get_astrbot_config_path())) / "builtin_commands_config.json"
+            ),
+            schema=load_builtin_schema(),
+        )
+        return dict(cfg)
+    except Exception:
+        return {}
+
+
+def load_builtin_schema() -> dict:
+    """读取本插件的 ``_conf_schema.json``（保留空 dict 作为兜底）。"""
+    import json as _json
+    from pathlib import Path as _Path
+
+    try:
+        from astrbot.core.utils.astrbot_path import get_astrbot_path
+
+        path = (
+            _Path(str(get_astrbot_path()))
+            / "astrbot"
+            / "builtin_stars"
+            / "builtin_commands"
+            / "_conf_schema.json"
+        )
+        with open(path, encoding="utf-8") as f:
+            return _json.load(f)
+    except Exception:
+        return {}
+
+
 async def get_level_by_id(user_id) -> int:
     """根据用户 ID 返回超管等级：0=普通成员 1=普通超管 2=中级超管 3=最高超管。
 
@@ -169,7 +214,9 @@ def register_compat_modules() -> list[str]:
     try:
         from astrbot.core.utils.astrbot_path import get_astrbot_path
 
-        legacy_dir = get_astrbot_path() / "data" / "plugins" / pkg_name
+        from pathlib import Path
+
+        legacy_dir = Path(str(get_astrbot_path())) / "data" / "plugins" / pkg_name
         if legacy_dir.is_dir():
             return []
     except Exception:

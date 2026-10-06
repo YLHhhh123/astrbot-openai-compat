@@ -1,0 +1,6 @@
+name: astrbot_plugin_chat_commands
+display_name: 会话指令集
+desc: 提供会话、插件、模型、人格等扩展指令（/llm /plugin /model /persona /history /ls /switch /rename /del /groupnew 等）。权限分级由内置插件 builtin_commands 统一提供。
+version: v1.0.0
+author: WorkBuddy
+category: interactive
