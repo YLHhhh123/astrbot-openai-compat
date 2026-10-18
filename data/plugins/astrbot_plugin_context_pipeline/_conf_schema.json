@@ -46,5 +46,77 @@
     "type": "bool",
     "hint": "来源 astrbot_plugin_prompt_compress；对已注入内容做截断/摘要，必须最后执行",
     "default": true
+  },
+  "stage_context_cleanup": {
+    "description": "阶段：清理上下文",
+    "type": "bool",
+    "hint": "用小模型把过长的注入内容重写成精炼版本（保留语义，不截断）。需配合下方清理参数",
+    "default": false
+  },
+  "cleanup_model": {
+    "description": "清理上下文用的模型",
+    "type": "text",
+    "hint": "留空=用当前会话模型；会话模型取不到时用 provider 列表第一个。可填 provider_id",
+    "default": ""
+  },
+  "cleanup_min_chars": {
+    "description": "清理阈值（字符）",
+    "type": "int",
+    "hint": "system_prompt 超过此字数才触发清理，避免每条消息都调模型",
+    "default": 1200
+  },
+  "cleanup_max_chars": {
+    "description": "清理后单块上限（字符，0=不限）",
+    "type": "int",
+    "hint": "重写结果超过此长度会被截断",
+    "default": 0
+  },
+  "cleanup_timeout": {
+    "description": "清理超时（秒）",
+    "type": "int",
+    "hint": "模型调用超时，超时则保留原文",
+    "default": 30
+  },
+  "cleanup_targets": {
+    "description": "要清理的注入块",
+    "type": "text",
+    "hint": "逗号分隔，可选 group_context、cross_group_memory。留空=这两个都清理",
+    "default": "group_context,cross_group_memory"
+  },
+  "output_check_mode": {
+    "description": "输出检查模式",
+    "type": "text",
+    "hint": "off=关闭（默认）；rule=纯关键词规则；llm=规则+小模型复核",
+    "default": "off"
+  },
+  "output_check_action": {
+    "description": "命中后的动作",
+    "type": "text",
+    "hint": "block=拦截并替换提示（默认）；warn=仅记录；strip=删除命中片段（仅 rule 模式）",
+    "default": "block"
+  },
+  "output_check_model": {
+    "description": "输出检查用的模型",
+    "type": "text",
+    "hint": "留空=用 provider 列表第一个（后台校验不占会话模型）",
+    "default": ""
+  },
+  "output_block_keywords": {
+    "description": "输出拦截关键词/正则",
+    "type": "text",
+    "hint": "逗号分隔，每项可写正则。留空=不按关键词拦截（llm 模式仍生效）",
+    "default": ""
+  },
+  "output_check_min_chars": {
+    "description": "检查阈值（字符）",
+    "type": "int",
+    "hint": "输出短于此字数则跳过检查",
+    "default": 0
+  },
+  "output_check_timeout": {
+    "description": "检查超时（秒）",
+    "type": "text",
+    "hint": "模型复核超时，超时放行",
+    "default": 20
   }
 }

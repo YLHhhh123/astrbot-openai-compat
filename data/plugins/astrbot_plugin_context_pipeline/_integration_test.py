@@ -113,9 +113,15 @@ async def main() -> int:
     # 平铺键（当前 schema 写法）
     ov = resolve_stage_overrides({"stage_worldbook": False})
     check(ok, total, "平铺键开关生效", ov["worldbook"] is False and ov["group_context"] is True)
-    check(ok, total, "无配置时全默认启用", all(resolve_stage_overrides({}).values()))
+    ov_all = resolve_stage_overrides({})
+    check(ok, total, "无配置时委托阶段全默认启用",
+          all(ov_all[s.key] for s in ORDERED))
+    check(ok, total, "无配置时内置阶段保持默认（清理/检查均关）",
+          ov_all["context_cleanup"] is False)
     ov3 = resolve_stage_overrides({"stage_不存在的阶段": False})
-    check(ok, total, "未知平铺键被忽略", len(ov3) == len(ORDERED))
+    check(ok, total, "未知平铺键被忽略", "不存在的阶段" not in ov3)
+    check(ok, total, "委托+内置阶段都在返回值里",
+          len(ov3) == len(ORDERED) + 2)
     #旧嵌套写法仍兼容
     ov4 = resolve_stage_overrides({"stages": {"group_context": False}})
     check(ok, total, "旧嵌套写法向后兼容", ov4["group_context"] is False)
@@ -124,6 +130,11 @@ async def main() -> int:
     check(ok, total, "平铺键优先于嵌套", ov5["worldbook"] is True)
     # 键名映射
     check(ok, total, "键名映射为 stage_<key>", stage_config_key("worldbook") == "stage_worldbook")
+    # 内置阶段也必须能被解析（曾漏掉导致清理上下文永远关闭）
+    ovc = resolve_stage_overrides({"stage_context_cleanup": True})
+    check(ok, total, "内置阶段可被启用", ovc.get("context_cleanup") is True)
+    check(ok, total, "内置阶段默认关闭", resolve_stage_overrides({}).get("context_cleanup") is False)
+    check(ok, total, "内置阶段键也在返回值里", "output_check" in resolve_stage_overrides({}))
 
     # ── 5. 弱引用生命周期 ──────────────────────────────────────────
     keep3 = []
