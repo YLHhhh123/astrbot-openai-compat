@@ -1,0 +1,50 @@
+{
+  "enabled": {
+    "description": "管线总开关",
+    "type": "bool",
+    "hint": "关闭后所有注入阶段都不执行（各阶段开关仍保留原值）",
+    "default": true
+  },
+  "stage_group_context": {
+    "description": "阶段：群聊语境",
+    "type": "bool",
+    "hint": "来源 astrbot_plugin_group_context；采集群内近期消息作为语境，消费式注入",
+    "default": true
+  },
+  "stage_cross_group_memory": {
+    "description": "阶段：跨群记忆",
+    "type": "bool",
+    "hint": "来源 astrbot_plugin_cross_group_memory；检索该用户在其他群的记忆",
+    "default": true
+  },
+  "stage_self_learning": {
+    "description": "阶段：自学习",
+    "type": "bool",
+    "hint": "来源 astrbot_plugin_self_learning；按群/话题注入历史学到的条目",
+    "default": true
+  },
+  "stage_worldbook": {
+    "description": "阶段：世界书",
+    "type": "bool",
+    "hint": "来源 astrbot_plugin_worldbook；群级设定条目的匹配与注入",
+    "default": true
+  },
+  "stage_llm_perception": {
+    "description": "阶段：时间感知",
+    "type": "bool",
+    "hint": "来源 astrbot_plugin_LLMPerception；注入当前时间、节日等环境信息",
+    "default": true
+  },
+  "stage_active_reply_prompt": {
+    "description": "阶段：主动回复提示词",
+    "type": "bool",
+    "hint": "来源 astrbot_plugin_customized_active_reply_prompt；须在记忆处理之后执行",
+    "default": true
+  },
+  "stage_prompt_compress": {
+    "description": "阶段：注入压缩",
+    "type": "bool",
+    "hint": "来源 astrbot_plugin_prompt_compress；对已注入内容做截断/摘要，必须最后执行",
+    "default": true
+  }
+}

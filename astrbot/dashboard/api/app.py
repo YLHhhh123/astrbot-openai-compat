@@ -56,6 +56,7 @@ from astrbot.dashboard.services.update_service import (
 )
 
 from .api_keys import legacy_router as legacy_api_keys_router
+from .module_switches import router as module_switches_router
 from .auth import legacy_router as legacy_auth_router
 from .backups import legacy_router as legacy_backups_router
 from .bots import legacy_router as legacy_bots_router
@@ -234,6 +235,7 @@ def create_dashboard_asgi_app(
     app.include_router(openai_compat_admin_router, prefix=API_V1_PREFIX)
     app.include_router(openai_compat_v1_router)
     app.include_router(plugin_categories_router, prefix=API_V1_PREFIX)
+    app.include_router(module_switches_router, prefix=API_V1_PREFIX)
     app.include_router(tier_admin_router, prefix=API_V1_PREFIX)
     app.include_router(static_files_router)
     return app

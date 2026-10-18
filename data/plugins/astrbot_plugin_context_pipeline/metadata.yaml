@@ -1,0 +1,6 @@
+name: astrbot_plugin_context_pipeline
+display_name: 上下文注入管线
+desc: 统一接管 LLM 请求前的上下文注入，按显式阶段顺序执行（记忆采集 → 群境→ 设定 → 感知 → 主动回复 → 压缩），取代多个插件各抢 on_llm_request 钩子的做法。可在 WebUI「模块开关」面板按阶段启停。
+version: v1.0.0
+author: WorkBuddy
+category: functional
