@@ -133,6 +133,36 @@ STAGE_SPECS: list[StageSpec] = [
     ),
 ]
 
+# ── 本管线自带的两个可选功能（不委托给别的插件）───────────────────────
+# 它们由本插件直接实现，故source_plugin 为空字符串，且默认关闭：
+# 清理上下文与输出检查都要额外调一次 LLM，属于「按需开启」的成本项。
+
+BUILTIN_STAGE_SPECS: list[StageSpec] = [
+    StageSpec(
+        key="context_cleanup",
+        label="清理上下文",
+        order=850,
+        source_plugin="",  # 本插件自带
+        description="用小模型把过长的注入内容重写成精炼版本（不截断语义）",
+        enabled_default=False,
+    ),
+    StageSpec(
+        key="output_check",
+        label="检查输出",
+        order=1000,  # 仅用于面板排序（实际不走管线钩子，见 output_check.py）
+        source_plugin="",
+        description="发送前检查回复内容，可按规则拦截或用小模型复核",
+        enabled_default=False,
+    ),
+]
+
+# output_check 作用于「回复产出」而非「请求注入」，不参与阶段排序执行；
+# 为避免混入 on_llm_request 阶段表，这里单独存放。
+REQUEST_STAGE_SPECS = STAGE_SPECS
+
+# 清理上下文要插在压缩（900）之前，所以它需要进请求阶段表
+BUILTIN_STAGE_SPEC_BY_KEY = {s.key: s for s in BUILTIN_STAGE_SPECS}
+
 STAGE_BY_KEY = {s.key: s for s in STAGE_SPECS}
 
 
@@ -190,17 +220,19 @@ def resolve_stage_overrides(config: dict) -> dict[str, bool]:
         {"stage_worldbook": false, "stages": {"group_context": false}}
 
     未显式配置的阶段用 ``StageSpec.enabled_default``。
+
+    ⚠️ 必须同时遍历 ``STAGE_SPECS``（委托阶段）与 ``BUILTIN_STAGE_SPECS``
+    （管线自带的清理上下文），否则内置阶段永远拿不到配置、恒为默认关闭。
     """
-    cfg = config or {}
-    flat = cfg if isinstance(cfg, dict) else {}
-    nested = cfg.get("stages") if isinstance(cfg, dict) else None
+    cfg = config if isinstance(config, dict) else {}
+    nested = cfg.get("stages")
     nested = nested if isinstance(nested, dict) else {}
 
     out: dict[str, bool] = {}
-    for spec in STAGE_SPECS:
+    for spec in (*STAGE_SPECS, *BUILTIN_STAGE_SPECS):
         val = None
-        if f"stage_{spec.key}" in flat:
-            val = flat[f"stage_{spec.key}"]
+        if f"stage_{spec.key}" in cfg:
+            val = cfg[f"stage_{spec.key}"]
         elif spec.key in nested:
             val = nested[spec.key]
         out[spec.key] = spec.enabled_default if val is None else bool(val)

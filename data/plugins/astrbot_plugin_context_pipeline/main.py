@@ -25,7 +25,11 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.provider import ProviderRequest
 from astrbot.api.star import register
 
+from .context_cleanup import clean_context
+from .output_check import check_output
 from .stages import (
+    BUILTIN_STAGE_SPEC_BY_KEY,
+    BUILTIN_STAGE_SPECS,
     STAGE_BY_KEY,
     STAGE_SPECS,
     PipelineContext,
@@ -53,6 +57,7 @@ class ContextPipeline(star.Star):
         self._loaded = False
         self._last_states: dict[str, dict] = {}
         self._last_error: str = ""
+        self._last_output_check: str = ""
 
     # ── 生命周期 ────────────────────────────────────────────────────────
 
@@ -225,8 +230,54 @@ class ContextPipeline(star.Star):
                 elapsed_ms=(time.perf_counter() - t0) * 1000,
             )
 
+        # ── 清理上下文（管线自带阶段，order=850，插在压缩之前）─────────
+        cleanup_spec = BUILTIN_STAGE_SPEC_BY_KEY.get("context_cleanup")
+        if cleanup_spec is not None:
+            t0 = time.perf_counter()
+            if not self._enabled:
+                pipe_ctx.mark(cleanup_spec.key, skipped="管线总开关关闭")
+            elif not overrides.get(cleanup_spec.key, False):
+                pipe_ctx.mark(cleanup_spec.key, skipped="阶段开关关闭")
+            else:
+                try:
+                    detail = await clean_context(
+                        self.context, req, config=self.config, event=event
+                    )
+                    pipe_ctx.mark(
+                        cleanup_spec.key,
+                        ran=not detail.startswith("skipped:"),
+                        detail=detail,
+                        elapsed_ms=(time.perf_counter() - t0) * 1000,
+                    )
+                    logger.debug(f"[context_pipeline] 清理上下文：{detail}")
+                except Exception as exc:
+                    pipe_ctx.mark(
+                        cleanup_spec.key,
+                        error=f"{type(exc).__name__}: {exc}",
+                        elapsed_ms=(time.perf_counter() - t0) * 1000,
+                    )
+                    logger.warning(f"[context_pipeline] 清理上下文失败：{exc!r}")
+
         self._last_states = {k: v.to_dict() for k, v in pipe_ctx.states.items()}
         self._last_error = "; ".join(problems)
+
+    # ── 输出检查（不走on_llm_request，作用于发送前的产出）─────────────
+
+    @filter.on_decorating_result()
+    async def run_output_check(self, event: AstrMessageEvent) -> None:
+        """发送前检查回复内容，必要时拦截或裁剪。"""
+        if not self._loaded:
+            return
+        mode = (self.config.get("output_check_mode") or "off").strip().lower()
+        if mode == "off":
+            return
+        try:
+            detail = await check_output(self.context, event, config=self.config)
+        except Exception as exc:
+            logger.warning(f"[context_pipeline] 输出检查失败（已放行）：{exc!r}")
+            return
+        self._last_output_check = detail
+        logger.info(f"[context_pipeline] 输出检查：{detail}")
 
     # ── 供 WebUI 读取的状态 ─────────────────────────────────────────────
 
@@ -249,15 +300,65 @@ class ContextPipeline(star.Star):
                     "order": spec.order,
                     "description": spec.description,
                     "source_plugin": spec.source_plugin,
+                    "builtin": False,
                     "enabled": bool(overrides.get(spec.key, spec.enabled_default)),
                     "bound": inst is not None,
                     "bound_name": bound_names.get(spec.key, ""),
                     "last_ran": last.get("ran", False),
                     "last_skipped": last.get("skipped", ""),
                     "last_error": last.get("error", ""),
+                    "last_detail": last.get("detail", ""),
                     "last_elapsed_ms": last.get("elapsed_ms", 0),
                 }
             )
+
+        # 内置阶段：清理上下文（走管线）/ 输出检查（走 on_decorating_result）
+        for spec in BUILTIN_STAGE_SPECS:
+            last = self._last_states.get(spec.key, {})
+            if spec.key == "output_check":
+                detail = self._last_output_check
+                stages.append(
+                    {
+                        "key": spec.key,
+                        "label": spec.label,
+                        "order": spec.order,
+                        "description": spec.description,
+                        "source_plugin": "",
+                        "builtin": True,
+                        "hook": "on_decorating_result",
+                        "enabled": (self.config.get("output_check_mode") or "off").lower()
+                        != "off",
+                        "bound": True,
+                        "bound_name": "管线自带",
+                        "last_ran": bool(detail) and not detail.startswith("skipped:"),
+                        "last_skipped": detail if detail.startswith("skipped:") else "",
+                        "last_error": "",
+                        "last_detail": detail,
+                        "last_elapsed_ms": 0,
+                    }
+                )
+                continue
+            stages.append(
+                {
+                    "key": spec.key,
+                    "label": spec.label,
+                    "order": spec.order,
+                    "description": spec.description,
+                    "source_plugin": "",
+                    "builtin": True,
+                    "hook": "on_llm_request",
+                    "enabled": bool(overrides.get(spec.key, spec.enabled_default)),
+                    "bound": True,
+                    "bound_name": "管线自带",
+                    "last_ran": last.get("ran", False),
+                    "last_skipped": last.get("skipped", ""),
+                    "last_error": last.get("error", ""),
+                    "last_detail": last.get("detail", ""),
+                    "last_elapsed_ms": last.get("elapsed_ms", 0),
+                }
+            )
+
+        stages.sort(key=lambda s: (s["order"], s["key"]))
         return {
             "pipeline_enabled": self._enabled,
             "loaded": self._loaded,
