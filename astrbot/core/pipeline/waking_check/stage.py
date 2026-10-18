@@ -33,6 +33,51 @@ def build_unique_session_id(event: AstrMessageEvent) -> str | None:
     return builder(event) if builder else None
 
 
+# --- lore-kernel-patch: 功能开关 / 管理员来源 ---
+def _extract_feature(module_path: str) -> str | None:
+    """从 handler 模块路径解析功能名。
+
+    - data.plugins.<插件>.main                 -> <插件>
+    - data.plugins.<插件>.core.<子模块>[.*]    -> <插件>/<子模块>
+
+    与服务器上历史补丁保持一致：feature_toggle 插件把禁用列表写在 sp 的
+    ``feature_toggle.group.<gid>.disabled`` / ``feature_toggle.global.disabled``，
+    由本函数解析出的功能名去比对。补丁标记勿删（升级后可据此重放）。
+    """
+    if not module_path or not module_path.startswith("data.plugins."):
+        return None
+    parts = module_path.split(".")
+    if len(parts) < 3:
+        return None
+    plugin = parts[2]
+    if ".core." in module_path:
+        idx = module_path.index(".core.")
+        rest = module_path[idx + len(".core.") :]
+        sub = rest.split(".")[0]
+        if sub:
+            return f"{plugin}/{sub}"
+    return plugin
+
+
+async def _feature_enabled(feature: str, group_id) -> bool:
+    """功能开关检查：先群关闭列表，再全局关闭列表。默认开启。"""
+    try:
+        from astrbot.api import sp
+
+        if group_id:
+            g_disabled = await sp.global_get(
+                f"feature_toggle.group.{group_id}.disabled", []
+            )
+            if isinstance(g_disabled, list) and feature in g_disabled:
+                return False
+        g_disabled = await sp.global_get("feature_toggle.global.disabled", [])
+        if isinstance(g_disabled, list) and feature in g_disabled:
+            return False
+    except Exception:
+        pass
+    return True
+
+
 @register_stage
 class WakingCheckStage(Stage):
     """检查是否需要唤醒。唤醒机器人有如下几点条件：
@@ -84,10 +129,12 @@ class WakingCheckStage(Stage):
         event: AstrMessageEvent,
     ) -> None | AsyncGenerator[None, None]:
         # apply unique session
+        event.set_extra("_session_isolated", False)
         if self.unique_session and event.message_obj.type == MessageType.GROUP_MESSAGE:
             sid = build_unique_session_id(event)
             if sid:
                 event.session_id = sid
+                event.set_extra("_session_isolated", True)
 
         # ignore bot self message
         if (
@@ -179,6 +226,14 @@ class WakingCheckStage(Stage):
                 == "astrbot.builtin_stars.builtin_commands.main"
             ):
                 continue
+
+            # --- lore-kernel-patch: 功能开关检查，被禁用的子功能直接跳过 ---
+            _orig = getattr(handler, "orig_module_path", None) or handler.handler_module_path
+            _feature = _extract_feature(_orig)
+            if _feature:
+                _enabled = await _feature_enabled(_feature, event.get_group_id())
+                if not _enabled:
+                    continue
 
             # filter 需满足 AND 逻辑关系
             passed = True
