@@ -130,6 +130,16 @@ const MainRoutes = {
       redirect: { name: 'ExtensionMarketplace' }
     },
     {
+      name: 'ModuleSwitches',
+      path: '/module-switches',
+      component: () => import('@/views/ModuleSwitchesPage.vue')
+    },
+    {
+      name: 'TierAdmin',
+      path: '/tier-admin',
+      component: () => import('@/views/TierAdminPage.vue')
+    },
+    {
       name: 'ApiServices',
       path: '/api-services',
       component: () => import('@/views/ApiServicesPage.vue')

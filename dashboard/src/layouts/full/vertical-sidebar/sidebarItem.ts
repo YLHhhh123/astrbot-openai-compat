@@ -37,6 +37,16 @@ const sidebarItem: menu[] = [
     to: '/providers',
   },
   {
+    title: 'core.navigation.moduleSwitches',
+    icon: 'mdi-toggle-switch-variant',
+    to: '/module-switches',
+  },
+  {
+    title: 'core.navigation.tierAdmin',
+    icon: 'mdi-shield-crown',
+    to: '/tier-admin',
+  },
+  {
     title: 'core.navigation.apiServices',
     icon: 'mdi-api',
     to: '/api-services',

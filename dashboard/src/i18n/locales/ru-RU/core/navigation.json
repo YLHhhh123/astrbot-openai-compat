@@ -14,6 +14,8 @@
     },
     "subagent": "Субагенты",
     "apiServices": "API-сервисы",
+    "tierAdmin": "Уровни админов",
+    "moduleSwitches": "Переключатели модулей",
     "toolUse": "Инструменты MCP",
     "extension": "Плагины",
     "extensionTabs": {
