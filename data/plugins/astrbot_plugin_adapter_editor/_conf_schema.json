@@ -1,0 +1,50 @@
+{
+  "enabled": {
+    "description": "总开关（需在面板手动开启，AI 才能提交提案）",
+    "type": "bool",
+    "hint": "关闭后 AI 的适配器编辑工具直接不可用；已生效的改动不受影响",
+    "default": false
+  },
+  "approve_tier": {
+    "description": "审批权限等级",
+    "type": "text",
+    "hint": "top_admin/mid_admin/normal_admin。只影响此插件的审批动作，不改变其他权限体系",
+    "default": "top_admin"
+  },
+  "protected_adapters": {
+    "description": "不可修改的适配器",
+    "type": "text",
+    "hint": "逗号分隔的适配器名，如 aiocqhttp,telegram。命中则拒绝任何改动（含新建同名）",
+    "default": "aiocqhttp"
+  },
+  "quota_per_session": {
+    "description": "每会话提案上限",
+    "type": "int",
+    "hint": "同一用户 30 分钟内最多提交几次",
+    "default": 3
+  },
+  "quota_per_day": {
+    "description": "每日提案上限",
+    "type": "int",
+    "hint": "同一用户 24 小时内最多提交几次",
+    "default": 10
+  },
+  "quota_max_diff_lines": {
+    "description": "单次改动行数上限",
+    "type": "int",
+    "hint": "超过则拒绝，提示 AI 拆分成多次提交",
+    "default": 200
+  },
+  "quota_max_file_bytes": {
+    "description": "目标文件大小上限（字节）",
+    "type": "int",
+    "hint": "防止改超大文件",
+    "default": 400000
+  },
+  "allow_new_adapter": {
+    "description": "允许新建适配器",
+    "type": "bool",
+    "hint": "关闭后只允许修改已存在的适配器文件；新建适配器还要改 metadata.yaml 才能被内核加载",
+    "default": true
+  }
+}
