@@ -176,6 +176,20 @@ DEFAULT_CONFIG = {
             "quality": 95,
         },
     },
+    # 模型分组：把「组名」当 provider id 用，插件与配置都无需改动内核逻辑
+    # 详见 astrbot/core/provider/model_groups.py
+    "model_groups": [
+        {
+            "name": "daily",
+            "label": "日常对话",
+            "members": [],
+            "strategy": "fallback",
+            "params": {},
+            "scope": {},
+            "enabled": False,
+            "note": "示例：填入 provider id 或其它组名；strategy 可为 fallback / round_robin",
+        }
+    ],
     "agent_runner": {
         "runner_type": "local",
         "config": get_agent_runner_config_default("local"),
