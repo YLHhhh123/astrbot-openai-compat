@@ -40,7 +40,28 @@ class _Logger:
         return lambda *a, **k: None
 
 
-_cfg = json.load(open(os.path.join(HERE, "data", "cmd_config.json"), encoding="utf-8-sig"))
+# 不读线上 cmd_config.json —— 那个文件会随部署/重置变化，测试不该依赖它。
+# 这里只用它取真实的 provider id 列表，再自建分组配置。
+_real = json.load(open(os.path.join(HERE, "data", "cmd_config.json"), encoding="utf-8-sig"))
+_pids = [p["id"] for p in (_real.get("provider") or []) if p.get("enable")]
+if len(_pids) < 3:
+    raise SystemExit(f"需要至少 3 个启用的 provider，当前只有 {len(_pids)} 个")
+
+_cfg = {
+    "model_groups": [
+        {"name": "daily", "label": "日常", "members": _pids[:2],
+         "strategy": "fallback", "params": {}, "scope": {"default": True},
+         "enabled": True, "note": ""},
+        {"name": "rotating", "label": "轮询", "members": _pids[:3],
+         "strategy": "round_robin", "params": {}, "scope": {}, "enabled": True, "note": ""},
+        {"name": "strict", "label": "低温", "members": _pids[:1],
+         "strategy": "fallback",
+         "params": {"temperature": 0.1, "max_output_tokens": 2048},
+         "scope": {}, "enabled": True, "note": ""},
+        {"name": "nested", "label": "嵌套", "members": ["daily", "strict"],
+         "strategy": "fallback", "params": {}, "scope": {}, "enabled": True, "note": ""},
+    ]
+}
 
 _a = types.ModuleType("astrbot"); _a.__path__ = []
 _core = types.ModuleType("astrbot.core"); _core.__path__ = []
@@ -80,7 +101,7 @@ def main() -> int:
                 None):
         name = find_group_for_scope(groups, umo, None)
         exp = expand_group(name, groups) if name else []
-        usable = [m for m in exp if m in {p["id"] for p in _cfg.get("provider", []) if p.get("enable")}]
+        usable = [m for m in exp if m in _pids]
         check(ok, total,
               f"umo={str(umo)[:28]:28} → 组={name} 可用成员={len(usable)}",
               bool(name) and bool(usable))
@@ -99,9 +120,8 @@ def main() -> int:
     check(ok, total, "fallback 组顺序稳定不轮转", f1 == f2)
 
     # 参数映射（真实 provider 名）
-    pids = [p["id"] for p in _cfg.get("provider", []) if p.get("enable")]
     mapped = []
-    for pid in pids[:3]:
+    for pid in _pids[:3]:
         from astrbot.core.provider.model_groups import map_params_to_provider
         mapped.append((pid, map_params_to_provider(
             {"temperature": 0.2, "max_output_tokens": 1024}, pid)))
