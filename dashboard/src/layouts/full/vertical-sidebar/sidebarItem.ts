@@ -37,6 +37,16 @@ const sidebarItem: menu[] = [
     to: '/providers',
   },
   {
+    title: 'core.navigation.userPortrait',
+    icon: 'mdi-account-search',
+    to: '/user-portrait',
+  },
+  {
+    title: 'core.navigation.adapterEditor',
+    icon: 'mdi-pencil',
+    to: '/adapter-editor',
+  },
+  {
     title: 'core.navigation.moduleSwitches',
     icon: 'mdi-toggle-switch-variant',
     to: '/module-switches',

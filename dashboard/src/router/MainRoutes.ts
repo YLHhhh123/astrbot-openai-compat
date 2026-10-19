@@ -130,6 +130,16 @@ const MainRoutes = {
       redirect: { name: 'ExtensionMarketplace' }
     },
     {
+      name: 'UserPortrait',
+      path: '/user-portrait',
+      component: () => import('@/views/UserPortraitPage.vue')
+    },
+    {
+      name: 'AdapterEditor',
+      path: '/adapter-editor',
+      component: () => import('@/views/AdapterEditorPage.vue')
+    },
+    {
       name: 'ModuleSwitches',
       path: '/module-switches',
       component: () => import('@/views/ModuleSwitchesPage.vue')

@@ -57,6 +57,11 @@ class SQLiteDatabase(BaseDatabase):
 
     async def initialize(self) -> None:
         """Initialize the database by creating tables if they do not exist."""
+        # metadata.create_all only knows models that have been imported. The
+        # persona ORM lives in astrbot/core/persona/models.py, so import it
+        # before creating tables or user_personas will not exist.
+        import astrbot.core.persona.models  # noqa: F401
+
         async with self.engine.begin() as conn:
             await conn.run_sync(SQLModel.metadata.create_all)
             await conn.execute(text("PRAGMA journal_mode=WAL"))
@@ -2558,3 +2563,128 @@ class SQLiteDatabase(BaseDatabase):
             query = query.order_by(desc(CronJob.created_at))
             result = await session.execute(query)
             return list(result.scalars().all())
+    # ── 用户形象（astrbot/core/persona）────────────────────────────
+    # 这些表由 persona 包定义；db_helper 侧只提供读写通道，
+    # 保持「按表手写方法」这一既有约定。
+
+    async def get_user_persona(self, user_id: str) -> "UserPersona | None":
+        from astrbot.core.persona.models import UserPersona
+
+        async with self.get_db() as session:
+            result = await session.execute(
+                select(UserPersona).where(UserPersona.user_id == user_id)
+            )
+            return result.scalars().first()
+
+    async def get_user_personas(self) -> list["UserPersona"]:
+        from astrbot.core.persona.models import UserPersona
+
+        async with self.get_db() as session:
+            result = await session.execute(select(UserPersona))
+            return list(result.scalars().all())
+
+    async def upsert_user_persona(self, persona) -> "UserPersona":
+        """按 user_id 覆盖写入；已存在则整体更新。"""
+        from astrbot.core.persona.models import UserPersona
+
+        async with self.get_db() as session:
+            existing = await session.execute(
+                select(UserPersona).where(UserPersona.user_id == persona.user_id)
+            )
+            row = existing.scalars().first()
+            if row is None:
+                row = persona
+                session.add(row)
+            else:
+                for field in ("summary", "traits", "evidence", "confidence",
+                              "sample_count", "persona_model_id", "updated_at"):
+                    setattr(row, field, getattr(persona, field))
+            await session.commit()
+            await session.refresh(row)
+            return row
+
+    async def get_persona_group_adjusts(self, user_id: str) -> list:
+        from astrbot.core.persona.models import PersonaGroupAdjust
+
+        async with self.get_db() as session:
+            result = await session.execute(
+                select(PersonaGroupAdjust).where(
+                    PersonaGroupAdjust.user_id == user_id
+                )
+            )
+            return list(result.scalars().all())
+
+    async def upsert_persona_group_adjust(self, adjust):
+        from astrbot.core.persona.models import PersonaGroupAdjust
+
+        async with self.get_db() as session:
+            existing = await session.execute(
+                select(PersonaGroupAdjust).where(
+                    PersonaGroupAdjust.user_id == adjust.user_id,
+                    PersonaGroupAdjust.group_id == adjust.group_id,
+                )
+            )
+            row = existing.scalars().first()
+            if row is None:
+                row = adjust
+                session.add(row)
+            else:
+                for field in ("note", "traits", "sample_count", "updated_at"):
+                    setattr(row, field, getattr(adjust, field))
+            await session.commit()
+            await session.refresh(row)
+            return row
+
+    async def delete_user_persona(self, user_id: str) -> bool:
+        from astrbot.core.persona.models import PersonaGroupAdjust, UserPersona
+
+        async with self.get_db() as session:
+            rows = await session.execute(
+                select(UserPersona).where(UserPersona.user_id == user_id)
+            )
+            row = rows.scalars().first()
+            if row is None:
+                return False
+            await session.delete(row)
+            adjusts = await session.execute(
+                select(PersonaGroupAdjust).where(
+                    PersonaGroupAdjust.user_id == user_id
+                )
+            )
+            for a in adjusts.scalars().all():
+                await session.delete(a)
+            await session.commit()
+            return True
+
+    async def insert_persona_inference_log(self, log):
+        from astrbot.core.persona.models import PersonaInferenceLog
+
+        async with self.get_db() as session:
+            session.add(log)
+            await session.commit()
+            await session.refresh(log)
+            return log
+
+    async def get_persona_inference_logs(self, user_id: str) -> list:
+        from astrbot.core.persona.models import PersonaInferenceLog
+
+        async with self.get_db() as session:
+            result = await session.execute(
+                select(PersonaInferenceLog)
+                .where(PersonaInferenceLog.user_id == user_id)
+                .order_by(desc(PersonaInferenceLog.created_at))
+            )
+            return list(result.scalars().all())
+
+    async def get_messages_by_sender(
+        self, sender_id: str, limit: int = 120
+    ) -> list:
+        """取某人最近的消息记录（用于形象推理取材）。"""
+        async with self.get_db() as session:
+            result = await session.execute(
+                select(PlatformMessageHistory)
+                .where(PlatformMessageHistory.sender_id == sender_id)
+                .order_by(desc(PlatformMessageHistory.id))
+                .limit(limit)
+            )
+            return list(reversed(result.scalars().all()))

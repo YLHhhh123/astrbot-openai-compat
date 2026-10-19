@@ -16,6 +16,8 @@
   "apiServices": "API サービス",
   "tierAdmin": "管理者レベル",
   "moduleSwitches": "モジュールスイッチ",
+  "adapterEditor": "アダプタ編集",
+  "userPortrait": "ユーザー像",
   "toolUse": "MCP",
   "extension": "プラグイン",
   "extensionTabs": {

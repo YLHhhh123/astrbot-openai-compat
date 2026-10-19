@@ -16,6 +16,8 @@
     "apiServices": "API-сервисы",
     "tierAdmin": "Уровни админов",
     "moduleSwitches": "Переключатели модулей",
+    "adapterEditor": "Редактор адаптеров",
+    "userPortrait": "Портрет пользователя",
     "toolUse": "Инструменты MCP",
     "extension": "Плагины",
     "extensionTabs": {

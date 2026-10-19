@@ -16,6 +16,8 @@
   "apiServices": "API 服务",
   "tierAdmin": "管理员等级",
   "moduleSwitches": "模块开关",
+  "adapterEditor": "适配器编辑",
+  "userPortrait": "用户形象",
   "toolUse": "MCP",
   "extension": "插件",
   "extensionTabs": {
