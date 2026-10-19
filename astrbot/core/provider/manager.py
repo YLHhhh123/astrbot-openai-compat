@@ -242,6 +242,13 @@ class ProviderManager:
         Raises:
             ValueError: If provider_type is unsupported.
         """
+        # --- 模型分组：组名当provider id 用（透明解析）--------------------
+        # 插件在配置里写组名（如 "daily"）即可，无需改动任何插件代码。
+        # 解析失败一律落回下面的原生逻辑，绝不因为分组配置有问题而影响对话。
+        provider = self._resolve_by_model_group(provider_type, umo, provider_id)
+        if provider is not None:
+            return provider
+
         provider = self.inst_map.get(provider_id) if provider_id else None
         if not provider:
             # default setting
@@ -288,6 +295,113 @@ class ProviderManager:
             )
 
         return provider
+
+    # ── 模型分组 ──────────────────────────────────────────────────
+
+    def _model_group_config(self, umo: str | None) -> dict:
+        """取当前会话生效的配置（供分组解析用）。"""
+        try:
+            return self.acm.get_conf(umo) or {}
+        except Exception as exc:
+            logger.debug(f"[model_group] 读取会话配置失败：{exc}")
+            return {}
+
+    def _group_candidates(
+        self, config: dict, umo: str | None, provider_id: str | None
+    ) -> tuple[str, dict] | None:
+        """判断当前应走哪个组。
+
+        Returns:
+            ``(组名, 组定义)``；不适用任何分组时返回 None。
+        """
+        from .model_groups import find_group_for_scope, load_groups
+
+        groups = load_groups(config)
+        if not groups:
+            return None
+        name = find_group_for_scope(groups, umo, provider_id)
+        if not name or name not in groups:
+            return None
+        return name, groups[name]
+
+    def _resolve_by_model_group(
+        self,
+        provider_type: ProviderType,
+        umo: str | None,
+        provider_id: str | None,
+    ) -> Providers | None:
+        """同步路径的分组解析。命中返回 provider，否则返回 None。
+
+        轮询位置保存在内存里（``_rr_cursor``）—— 同步调用多来自后台任务，
+        没必要为此写 sp。异步路径另用 sp，两边互不干扰。
+        """
+        if provider_type != ProviderType.CHAT_COMPLETION:
+            return None
+        config = self._model_group_config(umo)
+        found = self._group_candidates(config, umo, provider_id)
+        if not found:
+            return None
+        name, group = found
+        try:
+            return self._pick_from_group(config, name, group)
+        except Exception as exc:
+            logger.warning(f"[model_group] 组 {name} 解析失败，回退默认：{exc}")
+            return None
+
+    def _pick_from_group(
+        self, config: dict, name: str, group: dict
+    ) -> Providers | None:
+        """按组定义挑一个 provider（同步版轮询）。"""
+        from .model_groups import STRATEGY_ROUND_ROBIN, expand_group
+
+        members = expand_group(name, {name: group, **self._all_groups(config)})
+        members = [m for m in members if m in self.inst_map]
+        if not members:
+            logger.warning(f"[model_group] 组 {name} 里没有可用 provider")
+            return None
+
+        if group["strategy"] == STRATEGY_ROUND_ROBIN and len(members) > 1:
+            cur = getattr(self, "_rr_cursor", {}).get(name, 0)
+            picked = members[cur % len(members)]
+            if not hasattr(self, "_rr_cursor"):
+                self._rr_cursor = {}
+            self._rr_cursor[name] = (cur + 1) % len(members)
+            members = (
+                [picked] + [m for m in members if m != picked]
+            )
+        return self.inst_map[members[0]]
+
+    def _all_groups(self, config: dict) -> dict:
+        from .model_groups import load_groups
+
+        return load_groups(config)
+
+    async def resolve_by_model_group_async(
+        self,
+        provider_type: ProviderType,
+        umo: str | None,
+        provider_id: str | None,
+    ) -> Providers | None:
+        """异步路径的分组解析：轮询状态存 sp，跨重启可见。"""
+        if provider_type != ProviderType.CHAT_COMPLETION:
+            return None
+        config = self._model_group_config(umo)
+        found = self._group_candidates(config, umo, provider_id)
+        if not found:
+            return None
+        name, group = found
+        try:
+            from .model_groups import resolve_group_providers
+
+            members, g = await resolve_group_providers(name, config)
+            members = [m for m in members if m in self.inst_map]
+            if not members:
+                logger.warning(f"[model_group] 组 {name} 里没有可用 provider")
+                return None
+            return self.inst_map[members[0]]
+        except Exception as exc:
+            logger.warning(f"[model_group] 组 {name} 异步解析失败，回退默认：{exc}")
+            return None
 
     @deprecated(reason="Use get_using_provider_async() instead.")
     def get_using_provider(
@@ -336,6 +450,12 @@ class ProviderManager:
                 f"provider_perf_{provider_type.value}",
                 None,
             )
+        # 模型分组：优先于原生解析（异步路径，轮询状态存 sp）
+        grouped = await self.resolve_by_model_group_async(
+            provider_type, umo, provider_id
+        )
+        if grouped is not None:
+            return grouped
         return self._resolve_using_provider(provider_type, umo, provider_id)
 
     async def initialize(self) -> None:
