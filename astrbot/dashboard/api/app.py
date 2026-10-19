@@ -59,6 +59,7 @@ from .api_keys import legacy_router as legacy_api_keys_router
 from .module_switches import router as module_switches_router
 from .adapter_editor import router as adapter_editor_router
 from .auth import legacy_router as legacy_auth_router
+from .persona import router as persona_router
 from .backups import legacy_router as legacy_backups_router
 from .bots import legacy_router as legacy_bots_router
 from .chat import legacy_router as legacy_chat_router
@@ -236,6 +237,7 @@ def create_dashboard_asgi_app(
     app.include_router(openai_compat_admin_router, prefix=API_V1_PREFIX)
     app.include_router(openai_compat_v1_router)
     app.include_router(plugin_categories_router, prefix=API_V1_PREFIX)
+    app.include_router(persona_router, prefix=API_V1_PREFIX)
     app.include_router(adapter_editor_router, prefix=API_V1_PREFIX)
     app.include_router(module_switches_router, prefix=API_V1_PREFIX)
     app.include_router(tier_admin_router, prefix=API_V1_PREFIX)

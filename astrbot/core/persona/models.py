@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import time
+from dataclasses import dataclass, field
 from typing import Any
 
 from sqlmodel import JSON, Field, SQLModel
@@ -112,6 +113,38 @@ class PersonaInferenceLog(SQLModel, table=True):
     reason: str = Field(default="", max_length=500)
     elapsed_ms: int = Field(default=0)
     created_at: float = Field(default_factory=time.time)
+
+
+@dataclass
+class InferenceLogResult:
+    """推理未能执行时的返回体。
+
+    与 :class:`astrbot.core.persona.infer.InferenceResult` 字段对齐，
+    避免调用方为了拿一个"跳过"的结果去判断类型。
+    """
+
+    ok: bool = False
+    reason: str = ""
+    summary: str = ""
+    traits: dict = field(default_factory=dict)
+    evidence: list = field(default_factory=list)
+    confidence: float = 0.0
+    sample_count: int = 0
+    elapsed_ms: int = 0
+    model_id: str = ""
+
+    def as_dict(self) -> dict:
+        return {
+            "ok": self.ok,
+            "reason": self.reason,
+            "summary": self.summary,
+            "traits": self.traits,
+            "evidence": self.evidence,
+            "confidence": self.confidence,
+            "sample_count": self.sample_count,
+            "elapsed_ms": self.elapsed_ms,
+            "model_id": self.model_id,
+        }
 
 
 # ── 置信度规则 ──────────────────────────────────────────────────────────
