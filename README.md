@@ -1,7 +1,7 @@
 > ## ⚠️ 非官方 AI 修改分支 / Unofficial AI-Modified Fork
 >
 > 本仓库是 [AstrBotDevs/AstrBot](https://github.com/AstrBotDevs/AstrBot) 的**非官方分支**，
-> **全部改动由 AI 生成**（WorkBuddy / Claude），在人工需求指导下完成，**未经上游审核**。
+> **全部改动由 AI 生成**，在人工需求指导下完成，**未经上游审核**。
 >
 > - **上游仓库 Upstream**：https://github.com/AstrBotDevs/AstrBot
 > - **基线 Baseline**：v4.28.0（commit `a412146`）
