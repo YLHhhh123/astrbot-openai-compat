@@ -561,6 +561,20 @@ class PluginManager:
                     if isinstance(metadata.get("category"), str)
                     else None
                 ),
+                tags=(
+                    [str(t).strip() for t in metadata["tags"] if str(t).strip()]
+                    if isinstance(metadata.get("tags"), (list, tuple))
+                    else (
+                        # 也接受 "a,b,c" 这种单字符串写法
+                        [
+                            p.strip()
+                            for p in str(metadata["tags"]).replace("，", ",").split(",")
+                            if p.strip()
+                        ]
+                        if isinstance(metadata.get("tags"), str) and metadata["tags"].strip()
+                        else []
+                    )
+                ),
                 i18n=PluginManager._load_plugin_i18n(plugin_path),
             )
 
@@ -1196,6 +1210,7 @@ class PluginManager:
                             metadata.astrbot_version = metadata_yaml.astrbot_version
                             metadata.pages = metadata_yaml.pages
                             metadata.category = metadata_yaml.category
+                            metadata.tags = metadata_yaml.tags
                             metadata.i18n = metadata_yaml.i18n
                     except Exception as e:
                         logger.warning(

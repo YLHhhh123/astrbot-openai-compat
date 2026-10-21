@@ -8,9 +8,25 @@ AstrBot 的插件按能力性质分两类：
   主动发言等），在能力受限的入口（个人微信 openclaw、OpenAI 兼容 HTTP 接口）
   不可用。
 
-类别来源优先级：**内核配置覆盖** > **插件元数据声明** > **默认 interactive**。
-默认 interactive 是保守选择：把互动性插件误判为功能性，会在受限入口触发
-平台不支持的调用而报错；反向误判只是少用几个工具。
+类别来源优先级（从高到低）：
+
+1. ``override``  —— 共享偏好里的 ``plugin_category_overrides``，用户在面板手动指定
+2. ``metadata``  —— metadata.yaml 显式写 ``category: functional/interactive``
+3. ``tag``       —— **由 metadata.yaml 的 ``tags`` 自动识别**（见下）
+4. ``default``   —— 默认 ``functional``
+
+第3 级是后加的：多数插件的 metadata 里只写了 ``tags`` 而没有 ``category``，
+逐个补category 不现实。tags 足够表达插件性质，所以直接从它推断；
+真需要精确控制时用面板手动指定覆盖。
+
+默认类别取 ``functional``（功能性）而非 interactive：interactive 的插件依赖平台
+社交能力（收发消息、@、点赞、群管理），在受限入口（个人微信 openclaw、
+OpenAI 兼容 HTTP 接口）下不可用。默认给 functional 意味着"多数插件在受限入口
+可用"，而真依赖社交能力的插件写 tags 即可被识别为 interactive。
+
+tag 识别规则：把 ``tags`` 拼成小写字符串做**子串包含**匹配，先查互动词表
+再查功能词表，两者都命中时取 interactive —— 社交能力是"重"能力，
+错判成功能类会让它在受限入口看起来可用、实际调不动。
 
 入口（entry）标识取事件的 ``_entry`` 扩展字段（供 HTTP 等特殊入口自报身份），
 未设置时回落到平台适配器名 ``event.get_platform_name()``
@@ -28,12 +44,41 @@ from astrbot.core import logger, sp
 CATEGORY_FUNCTIONAL = "functional"
 CATEGORY_INTERACTIVE = "interactive"
 VALID_CATEGORIES: tuple[str, ...] = (CATEGORY_FUNCTIONAL, CATEGORY_INTERACTIVE)
-DEFAULT_CATEGORY = CATEGORY_INTERACTIVE
+DEFAULT_CATEGORY = CATEGORY_FUNCTIONAL
 
 CATEGORY_LABELS: dict[str, str] = {
     CATEGORY_FUNCTIONAL: "功能性",
     CATEGORY_INTERACTIVE: "互动性",
 }
+
+#: 来源标签的中文名，供面板展示。
+CATEGORY_SOURCE_LABELS: dict[str, str] = {
+    "override": "手动指定",
+    "metadata": "metadata 声明",
+    "tag": "tags 自动识别",
+    "default": "默认",
+}
+
+# ── tag 识别词表─────────────────────────────────────────────────
+#: 命中任一即判为互动性（依赖平台社交能力）。
+INTERACTIVE_TAG_WORDS: tuple[str, ...] = (
+    "互动", "社交", "聊天", "群聊", "群管理", "主动发言", "人格", "陪伴",
+    "点赞", "punish", "娱乐", "game", "游戏", "music", "音乐",
+    "meme", "表情包", "image", "图片", "voice", "语音", "video", "视频",
+    "forward", "转发", "quote", "引用", "签到", "角色扮演", "rp",
+    "chat", "talk", "group",
+)
+
+#: 命中任一即判为功能类（通过工具/接口对外提供能力）。
+FUNCTIONAL_TAG_WORDS: tuple[str, ...] = (
+    "功能", "工具", "tool", "utility", "llm", "模型", "model", "provider",
+    "api", "web", "webui", "面板", "管理", "统计", "数据", "data",
+    "备份", "backup", "性能", "performance", "监控", "monitor",
+    "记忆", "memory", "缓存", "cache", "搜索", "search",
+    "天气", "weather", "智能家居", "home", "http", "接口",
+    "安全", "security", "压缩", "compress", "感知", "perception",
+    "设定", "set", "世界书", "worldbook", "自学习", "学习", "分析",
+)
 
 # 事件的入口标识扩展字段（由 openai_compat 等特殊入口写入）
 ENTRY_EXTRA_KEY = "_entry"
@@ -61,18 +106,64 @@ class PluginCategoryManager:
     """插件类别与入口策略的读写与判定。"""
 
     # ------------------------------------------------------------------
+    # tag 自动识别
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _flatten_tags(tags: Any) -> list[str]:
+        """把 metadata 的 ``tags`` 规整成字符串列表。
+
+        支持列表、元组、集合，以及用逗号/中文逗号分隔的单个字符串。
+        """
+        if tags is None:
+            return []
+        if isinstance(tags, str):
+            parts = tags.replace("，", ",").replace(";", ",").split(",")
+            return [p.strip() for p in parts if p.strip()]
+        if isinstance(tags, (list, tuple, set, frozenset)):
+            out: list[str] = []
+            for item in tags:
+                if item is None:
+                    continue
+                text = str(item).strip()
+                if text:
+                    out.append(text)
+            return out
+        return []
+
+    @staticmethod
+    def category_from_tags(tags: Any) -> str | None:
+        """按 metadata 的 ``tags`` 推断类别；无任何命中返回 ``None``。
+
+        先查互动词表再查功能词表：两者都命中时取 interactive。
+        社交能力是"重"能力，把它错判成功能类，会让它在受限入口里
+        看起来可用、实际调不动；反向错判只是少几个工具。
+        """
+        items = PluginCategoryManager._flatten_tags(tags)
+        if not items:
+            return None
+        joined = " ".join(items).lower()
+        for word in INTERACTIVE_TAG_WORDS:
+            if word and word.lower() in joined:
+                return CATEGORY_INTERACTIVE
+        for word in FUNCTIONAL_TAG_WORDS:
+            if word and word.lower() in joined:
+                return CATEGORY_FUNCTIONAL
+        return None
+
+    # ------------------------------------------------------------------
     # 类别判定
     # ------------------------------------------------------------------
 
     @staticmethod
     def normalize_category(value: Any) -> str:
-        """把任意输入规整为合法类别；非法值回落默认 interactive。"""
+        """把任意输入规整为合法类别；非法值回落默认 functional。"""
         text = str(value).strip().lower() if value is not None else ""
         if text in VALID_CATEGORIES:
             return text
-        if text in ("func", "function", "tool", "工具", "功能性"):
+        if text in ("func", "function", "tool", "工具", "功能性", "功能类"):
             return CATEGORY_FUNCTIONAL
-        if text in ("inter", "interact", "chat", "互动", "互动性"):
+        if text in ("inter", "interact", "chat", "互动", "互动性", "社交类"):
             return CATEGORY_INTERACTIVE
         return DEFAULT_CATEGORY
 
@@ -118,21 +209,36 @@ class PluginCategoryManager:
         return True
 
     @staticmethod
-    def resolve_category(plugin_name: str | None, declared: str | None, overrides: dict[str, str]) -> str:
-        """按优先级解析插件类别：覆盖表 > 元数据声明 > 默认。"""
+    def resolve_category(
+        plugin_name: str | None,
+        declared: str | None,
+        overrides: dict[str, str],
+        tags: Any = None,
+    ) -> str:
+        """按优先级解析插件类别：覆盖表 > 元数据声明 > tags 识别 > 默认。"""
         if plugin_name and plugin_name in overrides:
             return overrides[plugin_name]
         if declared:
             return PluginCategoryManager.normalize_category(declared)
+        guessed = PluginCategoryManager.category_from_tags(tags)
+        if guessed:
+            return guessed
         return DEFAULT_CATEGORY
 
     @staticmethod
-    def category_source(plugin_name: str | None, declared: str | None, overrides: dict[str, str]) -> str:
-        """类别来源：``override`` / ``metadata`` / ``default``。"""
+    def category_source(
+        plugin_name: str | None,
+        declared: str | None,
+        overrides: dict[str, str],
+        tags: Any = None,
+    ) -> str:
+        """类别来源：``override`` / ``metadata`` / ``tag`` / ``default``。"""
         if plugin_name and plugin_name in overrides:
             return "override"
         if declared:
             return "metadata"
+        if PluginCategoryManager.category_from_tags(tags):
+            return "tag"
         return "default"
 
     # ------------------------------------------------------------------
@@ -223,6 +329,7 @@ class PluginCategoryManager:
         plugin_name: str | None,
         declared: str | None,
         context: dict[str, Any],
+        tags: Any = None,
         extra_plugins: set[str] | None = None,
         extra_categories: set[str] | None = None,
     ) -> bool:
@@ -233,6 +340,7 @@ class PluginCategoryManager:
             plugin_name: 插件名（``None`` 时视为系统插件，放行）。
             declared: 插件元数据声明的类别。
             context: :meth:`build_context` 的结果。
+            tags: 插件元数据的 ``tags``，用于自动识别类别。
             extra_plugins: 额外放行的插件名（如 HTTP 入口按 Key 放开）。
             extra_categories: 额外放行的类别。
 
@@ -244,7 +352,7 @@ class PluginCategoryManager:
         if extra_plugins and plugin_name in extra_plugins:
             return True
         category = PluginCategoryManager.resolve_category(
-            plugin_name, declared, context.get("overrides") or {}
+            plugin_name, declared, context.get("overrides") or {}, tags
         )
         if extra_categories and category in extra_categories:
             return True
@@ -327,6 +435,7 @@ class PluginCategoryManager:
                 plugin_name=plugin_name,
                 declared=getattr(plugin_meta, "category", None),
                 context=context,
+                tags=getattr(plugin_meta, "tags", None),
                 extra_plugins=extra_plugins,
                 extra_categories=extra_categories,
             ):

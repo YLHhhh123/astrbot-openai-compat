@@ -78,8 +78,15 @@ class StarMetadata:
     category: str | None = None
     """插件类别：``functional``（功能性）/ ``interactive``（互动性）。
 
-    ``None`` 视为 ``interactive``（保守默认：互动性插件依赖平台社交能力，
-    误判为功能性会在受限入口崩溃）。
+    ``None`` 时由 :meth:`plugin_category_manager.PluginCategoryManager` 按
+    ``tags`` 自动识别；识别不出则回落默认类别 ``functional``。
+    """
+
+    tags: list[str] = field(default_factory=list)
+    """metadata.yaml 的 ``tags``，用于自动推断 ``category``。
+
+    多数插件只写 tags 不写 category，所以这里把它读上来，
+    避免为了分类去逐个插件补 category。
     """
 
     @property
