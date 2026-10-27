@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 from typing import Any
 
@@ -110,11 +111,30 @@ class ContextPipeline(star.Star):
 
     @staticmethod
     def _matches(target: str, plugin_id: str, name: str, path: str) -> bool:
-        """阶段表里写的是插件目录名（ astrbot_plugin_xxx），匹配时按后缀比。"""
-        candidates = {plugin_id, name, path.split(".")[-1]}
-        # plugin_id 形如 "author/astrbot_plugin_xxx"，取后半段
-        if "/" in plugin_id:
-            candidates.add(plugin_id.split("/", 1)[1])
+        """阶段表里写的是插件目录名（ astrbot_plugin_xxx），匹配时按后缀比。
+
+        ``plugin_id`` 在 4.28.x 的 ``StarMetadata`` 上**并不存在**——字段只有
+        name / author / desc / short_desc / version / repo / star_cls_type，
+        getattr 拿到的是空串。原先把它当主要候选，于是四个插件全部匹配失败。
+
+        因此匹配以 ``name`` 与模块路径 ``path`` 为主：路径末两段都要试，因为
+        单模块插件是 ``astrbot_plugin_x.main``、多模块插件是
+        ``astrbot_plugin_x.core.framework_llm_adapter``，末段都是 ``main``/
+        业务模块名，光看末段匹配不到。plugin_id 只在万一存在时作为补充。
+        """
+        candidates = {name}
+        parts = path.split(".")
+        # 路径里第一个以 astrbot_plugin_ 开头的段就是插件目录名，最可靠
+        for seg in parts:
+            if seg.startswith("astrbot_plugin_"):
+                candidates.add(seg)
+        for depth in (1, 2, 3):
+            if len(parts) >= depth:
+                candidates.add(parts[-depth])
+        if plugin_id:
+            candidates.add(plugin_id)
+            if "/" in plugin_id:
+                candidates.add(plugin_id.split("/", 1)[1])
         for c in candidates:
             if not c:
                 continue
@@ -136,19 +156,205 @@ class ContextPipeline(star.Star):
                     found_name = name or plugin_id or path.split(".")[-1]
                     break
             if found is None:
+                # 兜底：star_map 里没有就直接 import。
+                # self_learning 属于这种——目录无 astrbot_plugin_ 前缀、
+                # 类上也没有 @register，内核从未把它放进 star_map。
+                imported = ContextPipeline._stars_by_import()
+                logger.info(
+                    f"[context_pipeline] 兜底扫描得到 {len(imported)} 个："
+                    + ", ".join(sorted(imported)[:15])
+                )
+                for entry, cls in imported.items():
+                    if ContextPipeline._same_plugin(entry, target):
+                        found = cls
+                        found_name = entry
+                        break
+            if found is None:
                 result[spec.key] = "未找到目标插件"
                 continue
             if not self._has_hook(found, spec.hook_name):
-                result[spec.key] = "目标插件未导出钩子"
-                continue
+                # 阶段表里的 hook_name 只是约定；真实插件的方法名可能是
+                # my_custom_hook_1 / replace_reply_prompt / compress_llm_request
+                # / inject_diversity_to_llm_request。靠探测而不是穷举名字。
+                real = self._find_hook_inst(found)
+                if not real:
+                    cands = [
+                        a for a in dir(found)
+                        if not a.startswith("__")
+                        and callable(getattr(found, a, None))
+                        and a not in ("terminate", "initialize")
+                    ]
+                    logger.warning(
+                        f"[context_pipeline] key={spec.key} 找到插件但探测不到钩子；"
+                        f"类={found}；可调用方法候选={cands[:12]}"
+                    )
+                    result[spec.key] = "目标插件未导出钩子"
+                    continue
+            else:
+                real = self._find_hook_inst(found) or spec.hook_name
             self.registry.bind(spec.key, found)
+            self.registry.record_hook_name(spec.key, real)
             result[spec.key] = "已绑定"
         missing = [k for k, v in result.items() if v != "已绑定"]
         if missing:
             logger.warning(f"[context_pipeline] 部分阶段未绑定：{missing}")
+            # 把实际扫到的候选打出来，否则面板上只显示"未绑定"，
+            # 现场无从判断是插件没加载、名字对不上，还是钩子名不对。
+            for k in missing:
+                target = next(
+                    (s.source_plugin for s in STAGE_SPECS if s.key == k), ""
+                )
+                logger.info(
+                    f"[context_pipeline] 未绑定诊断 key={k} target={target} "
+                    f"扫描到 {len(stars)} 个 Star："
+                    + ", ".join(f"{n or '?'}({p})" for _pid, n, _i, p in stars[:20])
+                )
         else:
             logger.info("[context_pipeline] 全部阶段绑定成功")
         return result
+
+    @staticmethod
+    def _same_plugin(entry: str, target: str) -> bool:
+        """比较插件标识，忽略 astrbot_plugin_ 前缀。
+
+        服务器上的插件目录**普遍没有前缀**（group_context / self_learning /
+        worldbook），而阶段表里写的是带前缀的 astrbot_plugin_xxx。
+        两侧都剥掉前缀再比。
+        """
+
+        def bare(x: str) -> str:
+            x = str(x or "").strip()
+            return x[len("astrbot_plugin_"):] if x.startswith("astrbot_plugin_") else x
+
+        a, b = bare(entry), bare(target)
+        return bool(a) and a == b
+
+    @staticmethod
+    def _stars_by_import():
+        """star_map 里没有时，直接按插件目录名 import 它的 main 模块。
+
+        有些插件（实测是self_learning）没有 @register 装饰器、也没进 star_map，
+        但仍然装着可用的 LLM 请求钩子。只看 star_map 会漏掉它们。
+        返回 name -> 类。
+        """
+        out: dict[str, Any] = {}
+        plugin_root = None
+        # 数据目录的取法：astrbot.core.data_path 并不存在（4.28 上会 ImportError），
+        # 正确的是 utils.astrbot_path.get_astrbot_data_path()。
+        for getter in (
+            lambda: __import__(
+                "astrbot.core.utils.astrbot_path", fromlist=["get_astrbot_data_path"]
+            ).get_astrbot_data_path(),
+            lambda: __import__(
+                "astrbot.core", fromlist=["get_astrbot_data_path"]
+            ).get_astrbot_data_path(),
+        ):
+            try:
+                plugin_root = os.path.join(str(getter()), "plugins")
+                if os.path.isdir(plugin_root):
+                    break
+                plugin_root = None
+            except Exception:
+                continue
+        if not plugin_root or not os.path.isdir(plugin_root):
+            logger.warning("[context_pipeline] 找不到插件目录，兜底扫描跳过")
+            return out
+        try:
+            entries = sorted(os.listdir(plugin_root))
+        except Exception:
+            return out
+        for entry in entries:
+            # 不限制前缀：实测self_learning 的目录就叫 "self_learning"，
+            # 没有 astrbot_plugin_ 前缀，按前缀过滤会直接漏掉它。
+            if entry.startswith("_") or entry.startswith("."):
+                continue
+            if not os.path.isfile(os.path.join(plugin_root, entry, "main.py")):
+                continue
+            if entry in out:
+                continue
+            mod_name = f"data.plugins.{entry}.main"
+            try:
+                import importlib
+
+                mod = importlib.import_module(mod_name)
+            except Exception:
+                continue
+            for attr in dir(mod):
+                obj = getattr(mod, attr, None)
+                if not isinstance(obj, type):
+                    continue
+                try:
+                    from astrbot.api.star import Star as _Star
+                except Exception:
+                    return out
+                if issubclass(obj, _Star) and obj is not _Star:
+                    out[entry] = obj
+                    break
+        return out
+
+    @staticmethod
+    def _find_hook_inst(cls):
+        """找出该插件类上真正承载 LLM 请求钩子的方法名，找不到返回 None。
+
+        **不能假设方法名是 on_llm_request**—— 那是装饰器的名字，不是函数名。
+        实测服务器上的插件五花八门：
+
+            LLMPerception                    -> my_custom_hook_1
+            customized_active_reply_prompt    -> replace_reply_prompt
+            prompt_compress                  -> compress_llm_request
+            self_learning                    -> on_llm_request（恰好同名）
+
+        装饰器 register_on_llm_request 会把函数登记进 handler 表并原样返回
+        函数对象，所以可靠判据是"该方法带 OnLLMRequestEvent 的 handler"。
+        """
+        if cls is None:
+            return None
+
+        # 首选：查 handler 表里的事件类型，最准确
+        try:
+            from astrbot.core.star.register.star_handler import get_handler
+
+            for attr in dir(cls):
+                if attr.startswith("__"):
+                    continue
+                try:
+                    member = getattr(cls, attr, None)
+                except Exception:
+                    continue
+                h = get_handler(member)
+                if h is None:
+                    continue
+                etype = str(getattr(h, "event_type", "") or "")
+                if "OnLLMRequest" in etype:
+                    return attr
+        except Exception:
+            pass
+
+        # 退路一：同名
+        for attr in dir(cls):
+            if attr.lower() == "on_llm_request":
+                return attr
+
+        # 退路二：按命名特征猜（服务器上实测的三种命名都在此覆盖内）
+        for attr in dir(cls):
+            if attr.startswith("__"):
+                continue
+            low = attr.lower()
+            if not callable(getattr(cls, attr, None)):
+                continue
+            has_kw = any(k in low for k in ("llm", "prompt", "compress", "hook"))
+            # 前缀白名单覆盖服务器上实测到的全部命名，包括
+            # self_learning 的 inject_diversity_to_llm_request
+            good_prefix = low.startswith(
+                (
+                    "my_", "replace_", "compress_", "handle_", "do_", "on_",
+                    "build_", "inject_", "apply_", "append_", "add_",
+                    "before_", "pre_", "process_", "decorate_", "enrich_",
+                )
+            )
+            if has_kw and good_prefix:
+                return attr
+        return None
 
     @staticmethod
     def _has_hook(inst, hook_name: str) -> bool:
@@ -171,7 +377,15 @@ class ContextPipeline(star.Star):
                     return hooks[hook_name]
             except Exception:
                 pass
-        return getattr(inst, hook_name, None)
+        direct = getattr(inst, hook_name, None)
+        if callable(direct):
+            return direct
+        # 名字对不上时按探测结果取：真实插件的钩子方法名并不统一
+        # （my_custom_hook_1 / replace_reply_prompt / compress_llm_request）。
+        found = ContextPipeline._find_hook_inst(inst)
+        if found:
+            return getattr(inst, found, None)
+        return None
 
     # ── 管线钩子 ────────────────────────────────────────────────────────
 
@@ -205,7 +419,9 @@ class ContextPipeline(star.Star):
                 problems.append(f"{spec.label}: 未绑定")
                 continue
 
-            hook = self._resolve_hook(inst, spec.hook_name)
+            hook = self._resolve_hook(
+                inst, self.registry.get_hook_name(spec.key, spec.hook_name)
+            )
             if not callable(hook):
                 pipe_ctx.mark(spec.key, skipped="钩子不可用")
                 problems.append(f"{spec.label}: 钩子不可用")

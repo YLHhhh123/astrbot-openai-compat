@@ -191,6 +191,20 @@ class StageRegistry:
 
     def __init__(self) -> None:
         self._refs: dict[str, weakref.ReferenceType] = {}
+        # 阶段 → 该插件上真实存在的钩子方法名（见 record_hook_name）
+        self._hook_names: dict[str, str] = {}
+
+    def record_hook_name(self, key: str, hook_name: str) -> None:
+        """记录该阶段实际使用的钩子方法名。
+
+        阶段表里的 ``hook_name`` 只是默认约定；真实插件的方法名五花八门
+        （my_custom_hook_1 / replace_reply_prompt / compress_llm_request），
+        绑定时以探测结果为准。
+        """
+        self._hook_names[key] = hook_name
+
+    def get_hook_name(self, key: str, default: str = "on_llm_request") -> str:
+        return self._hook_names.get(key, default)
 
     def bind(self, key: str, instance) -> None:
         try:
