@@ -363,6 +363,11 @@ CONFIG_METADATA_2 = {
                         "ws_reverse_host": "0.0.0.0",
                         "ws_reverse_port": 6199,
                         "ws_reverse_token": "",
+                        # QQ 空间绑定：插件通过 platform.capabilities 读取；
+                        # 留空则由插件尝试从 OneBot 客户端现取。
+                        "qq_space_uin": "",
+                        "qq_space_cookie": "",
+                        "qq_space_cookie_domain": "user.qzone.qq.com",
                     },
                     "个人微信": {
                         "id": "weixin_personal",

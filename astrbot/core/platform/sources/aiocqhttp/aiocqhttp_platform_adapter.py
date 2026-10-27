@@ -26,11 +26,38 @@ from ...register import register_platform_adapter
 from .aiocqhttp_message_event import *
 from .aiocqhttp_message_event import AiocqhttpMessageEvent
 
+# 渠道级能力绑定：这些字段直接写在本机器人渠道的配置里，
+# 插件通过 ``astrbot.core.platform.capabilities`` 读取，不再自己猜客户端对象。
+AIOCQHTTP_CONFIG_METADATA = {
+    "qq_space_uin": {
+        "description": "QQ 空间绑定 QQ 号",
+        "hint": (
+            "机器人自己的 QQ 号，用于 QQ 空间相关插件（发说说、看访客等）。"
+            "留空则尝试从 OneBot 客户端自动获取。"
+        ),
+        "type": "string",
+    },
+    "qq_space_cookie": {
+        "description": "QQ 空间 Cookie",
+        "hint": (
+            "该 QQ 号的 QQ 空间 Cookie（含 skey / p_skey 等）。"
+            "留空则由插件尝试通过 OneBot 的 get_cookies 现取。"
+        ),
+        "type": "text",
+    },
+    "qq_space_cookie_domain": {
+        "description": "QQ 空间 Cookie 域名",
+        "hint": "从 OneBot 取 Cookie 时使用的域名，默认 user.qzone.qq.com。",
+        "type": "string",
+    },
+}
+
 
 @register_platform_adapter(
     "aiocqhttp",
     "适用于 OneBot V11 标准的消息平台适配器，支持反向 WebSockets。",
     support_streaming_message=False,
+    config_metadata=AIOCQHTTP_CONFIG_METADATA,
 )
 class AiocqhttpAdapter(Platform):
     def __init__(
