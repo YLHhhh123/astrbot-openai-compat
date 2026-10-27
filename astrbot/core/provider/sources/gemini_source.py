@@ -19,6 +19,7 @@ from astrbot.core.exceptions import EmptyModelOutputError
 from astrbot.core.message.message_event_result import MessageChain
 from astrbot.core.provider.entities import LLMResponse, TokenUsage
 from astrbot.core.provider.func_tool_manager import ToolSet
+from astrbot.core.utils.error_redaction import mask_secret
 from astrbot.core.utils.media_utils import (
     describe_media_ref,
     resolve_media_ref_to_base64_data,
@@ -141,15 +142,15 @@ class ProviderGoogleGenAI(Provider):
             if len(keys) > 0:
                 self.set_key(random.choice(keys))
                 logger.warning(
-                    "Retrying with a different API key due to detected key issue: %s. Current key: %s...",
+                    "Retrying with a different API key due to detected key issue: %s. Current key: %s",
                     e.message,
-                    self.chosen_api_key[:12],
+                    mask_secret(self.chosen_api_key),
                 )
                 await asyncio.sleep(1)
                 return True
             logger.error(
-                "No valid API keys remaining. Current key: %s...",
-                self.chosen_api_key[:12],
+                "No valid API keys remaining. Current key: %s",
+                mask_secret(self.chosen_api_key),
             )
             raise Exception("Gemini API rate limit reached or API key issue detected.")
 

@@ -43,9 +43,14 @@ class BetaCommands:
             if ALL_PLUGINS in granted
             else "、".join(granted) or "对应插件"
         )
+        # redeem 返回的 message 区分「首次兑换」与「已激活过」，
+        # 只有首次兑换才用配置里的成功提示，否则会误导用户以为换了新资格。
+        headline = (
+            config["redeem_success_message"] if message == "兑换成功。" else message
+        )
         event.set_result(
             MessageEventResult().message(
-                f"{config['redeem_success_message']}\n可用范围：{scope_text}",
+                f"{headline}\n可用范围：{scope_text}",
             ),
         )
 

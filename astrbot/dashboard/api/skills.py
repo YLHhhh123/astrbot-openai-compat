@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 
 from astrbot.core import logger
 from astrbot.dashboard.async_utils import run_maybe_async
-from astrbot.dashboard.responses import error, ok
+from astrbot.dashboard.responses import error, ok, unexpected_error
 from astrbot.dashboard.schemas import (
     SkillByNameUpdateRequest,
     SkillFileUpdateRequest,
@@ -77,8 +77,7 @@ async def _run(operation, *, trace: bool = True):
     except SkillsServiceError as exc:
         return error(str(exc))
     except Exception as exc:
-        logger.error(str(exc), exc_info=trace)
-        return error(str(exc))
+        return unexpected_error("技能操作失败", exc)
 
 
 def _archive_response(archive: SkillArchive):

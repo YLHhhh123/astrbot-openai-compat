@@ -191,23 +191,34 @@ def _score(query: str, candidate: PluginCandidate) -> tuple[float, str] | None:
     ratio = SequenceMatcher(None, norm, norm_short).ratio()
     if ratio >= MIN_FUZZY_RATIO:
         return 560.0 * ratio, "fuzzy"
-    # 描述 / 展示名命中（中文名通常只写在 desc 或 display_name 里）
-    haystack = _normalize(
-        " ".join(
-            filter(
-                None,
-                [
-                    candidate.display_name,
-                    candidate.desc,
-                    candidate.plugin_id,
-                ],
-            )
-        )
-    )
-    if norm and norm in haystack:
-        return 420.0, "description"
-    if len(tokens) > 1 and all(token in haystack for token in tokens):
-        return 400.0, "description-tokens"
+    # 中文 / 描述匹配：按「展示名 > 简介 > 作者/标识」分层给分。
+    # 同一个词常被多个插件写进简介（例如「摩拉」既出现在经济系统，也出现在
+    # 抽卡池的说明里），若不分层会同分，排序就只能靠插件名长度决定，
+    # 结果会随插件数量变化而漂移。
+    display = _normalize(candidate.display_name)
+    desc = _normalize(candidate.desc)
+    extra = _normalize(candidate.plugin_id)
+
+    if norm and display:
+        if display == norm:
+            return 620.0, "display-exact"
+        if display.startswith(norm):
+            return 580.0, "display-prefix"
+        if norm in display:
+            # 越靠前越可能是主名，位置越靠后扣分越多
+            return 540.0 - display.find(norm), "display"
+
+    if norm and desc:
+        pos = desc.find(norm)
+        if pos >= 0:
+            # 出现次数越多越相关；位置越靠前越相关
+            hits = desc.count(norm)
+            return 420.0 + min(hits, 3) * 12 - min(pos, 40) * 0.5, "description"
+
+    if len(tokens) > 1:
+        haystack = display + desc + extra
+        if all(token in haystack for token in tokens):
+            return 400.0, "description-tokens"
     return None
 
 

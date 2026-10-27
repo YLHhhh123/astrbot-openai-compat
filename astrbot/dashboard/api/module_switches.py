@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
@@ -66,31 +67,53 @@ def _find_star(plugin_name: str):
     return None
 
 
+_PLUGIN_NAME_RE = re.compile(r"^[A-Za-z0-9_.\-]{1,128}$")
+
+
+def _require_plugin_name(plugin_name: str) -> str:
+    """校验插件名，阻断 ``../`` 之类的路径穿越。
+
+    ``plugin_name`` 直接来自 URL 路径，会被拼进配置文件名与插件目录路径，
+    必须先确认它只是一个普通标识符。
+
+    Args:
+        plugin_name: URL 里传入的插件名。
+
+    Returns:
+        校验通过的插件名。
+
+    Raises:
+        ValueError: 名字为空、含非法字符或为 ``.`` / ``..`` 时抛出。
+    """
+    name = str(plugin_name or "").strip()
+    if not name or name in {".", ".."} or not _PLUGIN_NAME_RE.match(name):
+        raise ValueError("非法的插件名")
+    return name
+
+
 def _config_path_for(plugin_name: str):
     from pathlib import Path
 
     from astrbot.core.utils.astrbot_path import get_astrbot_config_path
 
-    return Path(str(get_astrbot_config_path())) / f"{plugin_name}_config.json"
+    name = _require_plugin_name(plugin_name)
+    return Path(str(get_astrbot_config_path())) / f"{name}_config.json"
 
 
 def _load_cfg(plugin_name: str) -> AstrBotConfig:
     """打开插件配置。必须传 schema，否则 AstrBotConfig 会回退到主配置。"""
-    path = _config_path_for(plugin_name)
+    name = _require_plugin_name(plugin_name)
+    path = _config_path_for(name)
     schema: dict[str, Any] = {}
     try:
         from pathlib import Path as _P
 
         from astrbot.core.utils.astrbot_path import get_astrbot_path
 
-        sp = (
-            _P(str(get_astrbot_path()))
-            / "data"
-            / "plugins"
-            / plugin_name
-            / "_conf_schema.json"
-        )
-        if sp.is_file():
+        plugin_root = _P(str(get_astrbot_path())) / "data" / "plugins"
+        sp = (plugin_root / name / "_conf_schema.json").resolve(strict=False)
+        # 双保险：解析后仍须落在 plugins 目录内
+        if sp.is_file() and sp.is_relative_to(plugin_root.resolve(strict=False)):
             import json
 
             schema = json.loads(sp.read_text(encoding="utf-8"))
@@ -129,6 +152,10 @@ async def get_pipeline_state(
     _auth: AuthContext = Depends(require_dashboard_user),
 ):
     """读取管线运行态 + 阶段开关。"""
+    try:
+        plugin_name = _require_plugin_name(plugin_name)
+    except ValueError:
+        return JSONResponse(status_code=400, content={"data": {"error": "非法的插件名"}})
     inst = _find_star(plugin_name)
     if inst is None:
         return JSONResponse(
@@ -147,6 +174,10 @@ async def update_pipeline(
     _auth: AuthContext = Depends(require_dashboard_user),
 ):
     """更新总开关 / 阶段开关并落盘。"""
+    try:
+        plugin_name = _require_plugin_name(plugin_name)
+    except ValueError:
+        return JSONResponse(status_code=400, content={"data": {"error": "非法的插件名"}})
     inst = _find_star(plugin_name)
     if inst is None:
         return JSONResponse(
@@ -180,9 +211,16 @@ async def update_pipeline(
     try:
         cfg.save_config()
     except Exception as exc:
+        # 异常原文可能带配置文件绝对路径，只写日志。
+        logger.error("写入 %s 配置失败：%s", plugin_name, exc, exc_info=True)
         return JSONResponse(
             status_code=500,
-            content={"data": {"changed": [], "message": f"落盘失败：{exc}"}},
+            content={
+                "data": {
+                    "changed": [],
+                    "message": "落盘失败，请查看服务端日志了解详情",
+                }
+            },
         )
 
     # 同步到插件内存（插件把配置存在 self.config 上）
@@ -201,6 +239,10 @@ async def rebind_pipeline(
     _auth: AuthContext = Depends(require_dashboard_user),
 ):
     """重新绑定各阶段（目标插件热重载或启停后使用）。"""
+    try:
+        plugin_name = _require_plugin_name(plugin_name)
+    except ValueError:
+        return JSONResponse(status_code=400, content={"data": {"error": "非法的插件名"}})
     inst = _find_star(plugin_name)
     if inst is None or not hasattr(inst, "bind_all"):
         return JSONResponse(

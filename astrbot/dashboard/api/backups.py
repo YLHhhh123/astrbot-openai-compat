@@ -3,9 +3,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 
-from astrbot.core import logger
 from astrbot.dashboard.async_utils import run_maybe_async
-from astrbot.dashboard.responses import error, ok
+from astrbot.dashboard.responses import error, ok, unexpected_error
 from astrbot.dashboard.schemas import (
     BackupImportRequest,
     BackupRenameRequest,
@@ -69,8 +68,8 @@ async def _run(operation, *, prefix: str):
     except BackupServiceError as exc:
         return error(str(exc))
     except Exception as exc:
-        logger.error("%s: %s", prefix, exc, exc_info=True)
-        return error(f"{prefix}: {exc!s}")
+        # 异常原文可能含绝对路径 / 内部标识，只留在日志里。
+        return unexpected_error(prefix, exc)
 
 
 def _download_response(download) -> FileResponse:
@@ -99,8 +98,7 @@ def _download_backup(
     except BackupServiceError as exc:
         return error(str(exc))
     except Exception as exc:
-        logger.error("下载备份失败: %s", exc, exc_info=True)
-        return error(f"下载备份失败: {exc!s}")
+        return unexpected_error("下载备份失败", exc)
 
 
 @router.get("/backups")

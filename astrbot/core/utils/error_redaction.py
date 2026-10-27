@@ -1,7 +1,8 @@
 import re
 
 _SECRET_KEYS = (
-    r"(?:api_?key|access_?token|auth_?token|refresh_?token|session_?id|secret|password)"
+    r"(?:api_?key|access_?token|auth_?token|refresh_?token|session_?id|secret|password"
+    r"|token|passwd|client_secret|private_key)"
 )
 
 _JSON_FIELD_PATTERN = re.compile(
@@ -62,6 +63,28 @@ def redact_sensitive_text(text: str) -> str:
     text = _redact_query_like(text)
     text = _redact_tokens(text)
     return text
+
+
+def mask_secret(value: str, *, visible: int = 4) -> str:
+    """Mask a secret so it can be logged for troubleshooting.
+
+    Only the last ``visible`` characters are kept: a leading prefix leaks far
+    more entropy than a trailing suffix (many providers share long prefixes),
+    and callers use this to tell *which* key was used, not to identify it.
+
+    Args:
+        value: Secret value (API key, token, password).
+        visible: Number of trailing characters to keep.
+
+    Returns:
+        Masked representation; empty input yields an empty string.
+    """
+    text = str(value or "")
+    if not text:
+        return ""
+    if len(text) <= visible:
+        return "*" * len(text)
+    return "*" * (len(text) - visible) + text[-visible:]
 
 
 def safe_error(

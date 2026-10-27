@@ -298,21 +298,27 @@ class BetaGate:
         if not isinstance(item, dict):
             return False, "内测码无效，请核对后重试。", []
 
+        scope = str(item.get("scope") or ALL_PLUGINS).strip() or ALL_PLUGINS
+        granted = [ALL_PLUGINS] if scope == ALL_PLUGINS else [scope]
+
         used_by = str(item.get("used_by") or "").strip()
-        if used_by and used_by != user:
-            return False, "该内测码已被使用。", []
+        if used_by:
+            # 一次性内测码：兑换过即失效。
+            # 同一用户重复兑换按幂等处理（网络重试 / 重复发送不该报错），
+            # 但提示语要说明"已激活过"，不能让用户以为换到了新资格。
+            if used_by != user:
+                return False, "该内测码已被使用。", []
+            await BetaGate.grant(user, granted, source=key)
+            return True, "该内测码你已激活过，无需重复兑换。", granted
+
         expires_at = float(item.get("expires_at") or 0)
         if expires_at and expires_at <= _now():
             return False, "该内测码已过期。", []
 
-        scope = str(item.get("scope") or ALL_PLUGINS).strip() or ALL_PLUGINS
-        granted = [ALL_PLUGINS] if scope == ALL_PLUGINS else [scope]
-
-        if not used_by:
-            item["used_by"] = user
-            item["used_at"] = _now()
-            keys[key] = item
-            await sp.global_put(KEY_KEYS, keys)
+        item["used_by"] = user
+        item["used_at"] = _now()
+        keys[key] = item
+        await sp.global_put(KEY_KEYS, keys)
 
         await BetaGate.grant(user, granted, source=key)
         return True, "兑换成功。", granted

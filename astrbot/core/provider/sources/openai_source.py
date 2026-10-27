@@ -29,6 +29,7 @@ from astrbot.core.agent.tool import ToolSet
 from astrbot.core.exceptions import EmptyModelOutputError
 from astrbot.core.message.message_event_result import MessageChain
 from astrbot.core.provider.entities import LLMResponse, TokenUsage, ToolCallsResult
+from astrbot.core.utils.error_redaction import mask_secret
 from astrbot.core.utils.media_utils import (
     describe_media_ref,
     resolve_media_ref_to_base64_data,
@@ -42,6 +43,28 @@ from astrbot.core.utils.string_utils import normalize_and_dedupe_strings
 
 from ..register import register_provider_adapter
 from .request_retry import retry_provider_request
+
+
+def _host_matches(host: str | None, domain: str) -> bool:
+    """Check whether a host equals a domain or is one of its subdomains.
+
+    A plain substring test would accept look-alike hosts such as
+    ``api.deepseek.com.attacker.tld``, so compare labels instead.
+
+    Args:
+        host: Hostname taken from a parsed base URL.
+        domain: Registrable domain to match against.
+
+    Returns:
+        True when ``host`` is exactly ``domain`` or ends with ``.`` + ``domain``.
+    """
+    normalized_host = str(host or "").strip().strip(".").lower()
+    normalized_domain = str(domain or "").strip().strip(".").lower()
+    if not normalized_host or not normalized_domain:
+        return False
+    return normalized_host == normalized_domain or normalized_host.endswith(
+        "." + normalized_domain
+    )
 
 
 @register_provider_adapter(
@@ -999,7 +1022,7 @@ class ProviderOpenAIOfficial(Provider):
         _deepseek_v4_markers = ("deepseek-v4-pro", "deepseek-v4-flash", "deepseek-v4")
         is_deepseek_v4_reasoning = (
             any(marker in model for marker in _deepseek_v4_markers)
-            or "api.deepseek.com" in self.client.base_url.host
+            or _host_matches(self.client.base_url.host, "api.deepseek.com")
         )
         # deepseek-chat and deepseek-reasoner now point to V4 models (per official website)
 
@@ -1077,7 +1100,7 @@ class ProviderOpenAIOfficial(Provider):
         """处理API错误并尝试恢复"""
         if "429" in str(e):
             logger.warning(
-                f"API 调用过于频繁，尝试使用其他 Key 重试。当前 Key: {chosen_key[:12]}",
+                f"API 调用过于频繁，尝试使用其他 Key 重试。当前 Key: {mask_secret(chosen_key)}",
             )
             # 最后一次不等待
             if retry_cnt < max_retries - 1:

@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query, Request
 
-from astrbot.core import logger
 from astrbot.dashboard.async_utils import run_maybe_async
-from astrbot.dashboard.responses import error, ok
+from astrbot.dashboard.responses import error, ok, unexpected_error
 from astrbot.dashboard.schemas import (
     BatchSessionProviderRequest,
     BatchSessionServiceRequest,
@@ -47,8 +46,7 @@ def _service_error(exc: SessionManagementServiceError) -> dict:
 
 
 def _unexpected_error(prefix: str, exc: Exception) -> dict:
-    logger.error(f"{prefix}: {exc!s}")
-    return error(f"{prefix}: {exc!s}")
+    return unexpected_error(prefix, exc)
 
 
 async def _run(operation, *, label: str) -> dict:

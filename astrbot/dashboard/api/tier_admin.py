@@ -13,7 +13,6 @@
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 
 from fastapi import APIRouter, Depends
@@ -199,9 +198,16 @@ async def update_tier_config(
     try:
         cfg.save_config()
     except Exception as exc:
+        # 异常原文可能带配置文件的绝对路径，只写日志。
+        logger.error("写入 %s 失败：%s", _CONFIG_FILE, exc, exc_info=True)
         return JSONResponse(
             status_code=500,
-            content={"data": {"changed": [], "message": f"落盘失败：{exc}"}},
+            content={
+                "data": {
+                    "changed": [],
+                    "message": "落盘失败，请查看服务端日志了解详情",
+                }
+            },
         )
 
     await _sync_sp()
