@@ -1,4 +1,4 @@
-/* Auto-generated MDI subset – 272 icons */
+/* Auto-generated MDI subset – 274 icons */
 /* Do not edit manually. Run: pnpm run subset-icons */
 
 @font-face {
@@ -30,6 +30,10 @@
 
 .mdi-account-edit-outline::before {
   content: "\F0FFB";
+}
+
+.mdi-account-search::before {
+  content: "\F0016";
 }
 
 .mdi-account-voice::before {
@@ -484,6 +488,10 @@
   content: "\F0234";
 }
 
+.mdi-flask-outline::before {
+  content: "\F0096";
+}
+
 .mdi-folder-move::before {
   content: "\F0252";
 }
@@ -804,10 +812,6 @@
   content: "\F1353";
 }
 
-.mdi-phone-in-talk::before {
-  content: "\F03F6";
-}
-
 .mdi-pin::before {
   content: "\F0403";
 }
@@ -920,12 +924,20 @@
   content: "\F048F";
 }
 
+.mdi-shape-outline::before {
+  content: "\F0832";
+}
+
 .mdi-shield-check::before {
   content: "\F0565";
 }
 
 .mdi-shield-check-outline::before {
   content: "\F0CC8";
+}
+
+.mdi-shield-crown::before {
+  content: "\F18BC";
 }
 
 .mdi-shield-key::before {
@@ -974,14 +986,6 @@
 
 .mdi-star-outline::before {
   content: "\F04D2";
-}
-
-.mdi-stop::before {
-  content: "\F04DB";
-}
-
-.mdi-stop-circle::before {
-  content: "\F0666";
 }
 
 .mdi-subdirectory-arrow-right::before {
@@ -1034,6 +1038,10 @@
 
 .mdi-timer-sand::before {
   content: "\F051F";
+}
+
+.mdi-toggle-switch-variant::before {
+  content: "\F1A25";
 }
 
 .mdi-tools::before {
