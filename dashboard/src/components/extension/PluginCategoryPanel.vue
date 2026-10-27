@@ -1,21 +1,18 @@
 <script setup>
 /**
- * 插件分类与入口策略面板。
+ * 插件分类面板。
  *
- * - 插件按能力性质分为「功能性」与「互动性」，默认互动性（保守）。
- * - 各入口可配置允许的类别；受限入口（个人微信 openclaw、OpenAI 兼容 HTTP 接口）
- *   默认只放行功能性插件。
+ * - 插件按能力性质分为「功能性」与「互动性」，默认功能性（保守反向）。
+ * - 各机器人渠道允许的插件类别已移至「机器人设置」（平台适配器页，
+ *   每个机器人单独配置），本面板只负责给插件本身归类。
  */
 import { apiV1Client } from "@/api/http";
 import { computed, onMounted, ref } from "vue";
 
 const loading = ref(false);
-const savingPolicy = ref(false);
 const expanded = ref([]);
 const plugins = ref([]);
 const categories = ref([]);
-const policy = ref({});
-const defaultPolicy = ref({});
 
 const snack = ref({ show: false, text: "", color: "success" });
 
@@ -27,22 +24,8 @@ const unclassifiedCount = computed(
   () => plugins.value.filter((item) => item.source === "default" && !item.reserved).length,
 );
 
-const entries = computed(() => {
-  const keys = new Set([
-    ...Object.keys(defaultPolicy.value || {}),
-    ...Object.keys(policy.value || {}),
-  ]);
-  return Array.from(keys).sort();
-});
-
 function categoryLabel(value) {
   return categories.value.find((item) => item.value === value)?.label || value;
-}
-
-function defaultLabel(entry) {
-  const values = defaultPolicy.value?.[entry];
-  if (!values) return "跟随 default";
-  return values.map(categoryLabel).join(" / ");
 }
 
 async function load() {
@@ -54,8 +37,6 @@ async function load() {
     ]);
     const meta = metaRes?.data?.data || {};
     categories.value = meta.categories || [];
-    policy.value = { ...(meta.entry_policy || {}) };
-    defaultPolicy.value = meta.default_entry_policy || {};
     plugins.value = pluginsRes?.data?.data || [];
   } catch (error) {
     notify(`加载失败：${error?.message || error}`, "error");
@@ -92,25 +73,6 @@ async function resetPluginCategory(item) {
   }
 }
 
-async function savePolicy() {
-  savingPolicy.value = true;
-  try {
-    const payload = {};
-    entries.value.forEach((entry) => {
-      payload[entry] = policy.value[entry] || [];
-    });
-    const res = await apiV1Client.put("/plugin-categories/entry-policy", {
-      policy: payload,
-    });
-    policy.value = { ...(res?.data?.data?.policy || {}) };
-    notify("入口策略已保存");
-  } catch (error) {
-    notify(`保存失败：${error?.message || error}`, "error");
-  } finally {
-    savingPolicy.value = false;
-  }
-}
-
 onMounted(load);
 </script>
 
@@ -120,7 +82,7 @@ onMounted(load);
       <v-expansion-panel-title>
         <div class="d-flex align-center ga-3 flex-wrap">
           <v-icon icon="mdi-shape-outline" size="20" />
-          <span class="font-weight-medium">插件分类与入口策略</span>
+          <span class="font-weight-medium">插件分类</span>
           <v-chip size="x-small" color="info" variant="tonal">
             功能性 {{ plugins.filter((p) => p.category === "functional").length }} ·
             互动性 {{ plugins.filter((p) => p.category === "interactive").length }}
@@ -138,9 +100,9 @@ onMounted(load);
 
       <v-expansion-panel-text>
         <div class="text-caption text-medium-emphasis mb-3">
-          功能性插件依赖 LLM 工具能力，所有入口可用；互动性插件依赖平台社交能力
-          （收发消息、@、点赞等），在受限入口（个人微信 openclaw、OpenAI 兼容 HTTP
-          接口）不参与运行。未标注的插件按<strong>互动性</strong>处理。
+          功能性插件依赖 LLM 工具能力，所有渠道可用；互动性插件依赖平台社交能力
+          （收发消息、@、点赞等），在受限渠道不参与运行。未标注的插件按默认类别处理。
+          各渠道允许的插件类别请在<strong>「机器人设置」</strong>里对每个机器人单独配置。
         </div>
 
         <v-alert
@@ -150,54 +112,10 @@ onMounted(load);
           density="compact"
           class="mb-3"
         >
-          有 {{ unclassifiedCount }} 个插件既未在元数据声明类别、也未手动设置，正在按默认
-          「互动性」处理。若它们是功能性插件（提供工具能力），请在下方显式设置。
+          有 {{ unclassifiedCount }} 个插件既未在元数据声明类别、也未手动设置，
+          正在按默认「功能性」处理。若它们是互动性插件（依赖平台社交能力），
+          请在下方显式设置。
         </v-alert>
-
-        <h4 class="text-subtitle-2 mb-2">各入口允许的类别</h4>
-        <v-table density="compact" class="mb-3">
-          <thead>
-            <tr>
-              <th style="width: 30%">入口</th>
-              <th>允许的类别</th>
-              <th style="width: 22%">默认值</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="entry in entries" :key="entry">
-              <td>
-                <code>{{ entry }}</code>
-              </td>
-              <td>
-                <v-select
-                  v-model="policy[entry]"
-                  :items="categories"
-                  item-title="label"
-                  item-value="value"
-                  multiple
-                  chips
-                  density="compact"
-                  variant="outlined"
-                  hide-details
-                />
-              </td>
-              <td class="text-caption text-medium-emphasis">
-                {{ defaultLabel(entry) }}
-              </td>
-            </tr>
-          </tbody>
-        </v-table>
-
-        <div class="d-flex justify-end mb-5">
-          <v-btn
-            color="primary"
-            size="small"
-            :loading="savingPolicy"
-            @click="savePolicy"
-          >
-            保存入口策略
-          </v-btn>
-        </div>
 
         <h4 class="text-subtitle-2 mb-2">插件类别</h4>
         <v-table density="compact">

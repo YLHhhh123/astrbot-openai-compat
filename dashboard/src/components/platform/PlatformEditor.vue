@@ -94,6 +94,39 @@
 
       <v-divider />
 
+      <section class="bot-editor__section">
+        <div class="bot-editor__section-head">
+          <div>
+            <h3 class="bot-editor__section-title">插件类型限制</h3>
+            <p class="bot-editor__section-description">
+              限定本渠道允许运行的插件类别：功能性插件仅依赖 LLM
+              工具能力，互动性插件依赖收发消息、@ 等平台社交能力。留空表示跟随内置默认。
+            </p>
+          </div>
+        </div>
+
+        <div class="plugin-policy-card">
+          <v-select
+            v-model="draft.allowed_plugin_categories"
+            :items="categoryOptions"
+            item-title="label"
+            item-value="value"
+            multiple
+            chips
+            closable-chips
+            density="compact"
+            variant="outlined"
+            hide-details
+            :placeholder="policyDefaultText"
+          />
+          <div class="plugin-policy-card__hint">
+            未设置时：{{ policyDefaultText }}
+          </div>
+        </div>
+      </section>
+
+      <v-divider />
+
       <section class="bot-editor__section bot-editor__section--routes">
         <div class="bot-editor__section-head">
           <div>
@@ -360,6 +393,7 @@
 
 <script setup>
 import { computed, ref, watch } from "vue";
+import { apiV1Client } from "@/api/http";
 import {
   botApi,
   configProfileApi,
@@ -373,6 +407,11 @@ import { useModuleI18n } from "@/i18n/composables";
 import { getPlatformIcon, getTutorialLink } from "@/utils/platformUtils";
 
 const SYSTEM_DEFAULT_CONFIG = "__astrbot_system_default__";
+
+const FALLBACK_CATEGORIES = [
+  { value: "functional", label: "功能性" },
+  { value: "interactive", label: "互动性" },
+];
 
 const props = defineProps({
   platform: {
@@ -421,6 +460,8 @@ const advancedRoutes = ref([]);
 const fallbackConfigId = ref(SYSTEM_DEFAULT_CONFIG);
 const pendingSessionUmo = ref(null);
 const pendingConfigId = ref("default");
+const categoryOptions = ref(FALLBACK_CATEGORIES);
+const entryPolicy = ref({});
 let routeKey = 0;
 let loadVersion = 0;
 
@@ -437,6 +478,22 @@ const platformIcon = computed(() => {
   return getPlatformIcon(
     draft.value.type || props.platform.type || props.platform.id,
   );
+});
+
+function categoryLabel(value) {
+  return (
+    categoryOptions.value.find((item) => item.value === value)?.label || value
+  );
+}
+
+const policyDefaultText = computed(() => {
+  const type = draft.value.type || props.platform?.type || "";
+  const values =
+    entryPolicy.value[type] || entryPolicy.value["default"] || [];
+  if (!values.length || values.length >= categoryOptions.value.length) {
+    return "全部插件类别可用";
+  }
+  return `仅允许「${values.map(categoryLabel).join("、")}」插件`;
 });
 
 const defaultConfigOptions = computed(() => [
@@ -576,16 +633,33 @@ async function initialize(platform) {
   draft.value = template
     ? mergeConfigWithTemplate(platformCopy, template)
     : platformCopy;
+  // 插件类型限制：机器人配置项上的显式列表；缺失/非法时按「跟随默认」处理
+  draft.value.allowed_plugin_categories = Array.isArray(
+    draft.value.allowed_plugin_categories,
+  )
+    ? draft.value.allowed_plugin_categories.filter((item) =>
+        FALLBACK_CATEGORIES.some((cat) => cat.value === item),
+      )
+    : [];
   simpleBindings.value = [];
   advancedRoutes.value = [];
   fallbackConfigId.value = SYSTEM_DEFAULT_CONFIG;
   pendingSessionUmo.value = null;
 
-  const [profilesResult, routesResult] = await Promise.allSettled([
+  const [profilesResult, routesResult, metaResult] = await Promise.allSettled([
     configProfileApi.list(),
     configRouteApi.list(),
+    apiV1Client.get("/plugin-categories/meta"),
   ]);
   if (version !== loadVersion) return;
+
+  if (metaResult.status === "fulfilled") {
+    const meta = metaResult.value?.data?.data || {};
+    if (Array.isArray(meta.categories) && meta.categories.length) {
+      categoryOptions.value = meta.categories;
+    }
+    entryPolicy.value = meta.entry_policy || {};
+  }
 
   if (profilesResult.status === "fulfilled") {
     configProfiles.value = profilesResult.value.data.data.info_list || [];
@@ -1003,6 +1077,18 @@ function showError(error) {
 .route-default-card__select {
   flex: 0 1 280px;
   min-width: 220px;
+}
+
+.plugin-policy-card {
+  background: rgba(var(--v-theme-on-surface), 0.035);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+
+.plugin-policy-card__hint {
+  color: rgba(var(--v-theme-on-surface), 0.56);
+  font-size: 12px;
+  margin-top: 8px;
 }
 
 .route-builder {

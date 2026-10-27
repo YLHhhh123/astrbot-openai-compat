@@ -37,6 +37,31 @@ const sidebarItem: menu[] = [
     to: '/providers',
   },
   {
+    title: 'core.navigation.userPortrait',
+    icon: 'mdi-account-search',
+    to: '/user-portrait',
+  },
+  {
+    title: 'core.navigation.adapterEditor',
+    icon: 'mdi-pencil',
+    to: '/adapter-editor',
+  },
+  {
+    title: 'core.navigation.moduleSwitches',
+    icon: 'mdi-toggle-switch-variant',
+    to: '/module-switches',
+  },
+  {
+    title: 'core.navigation.tierAdmin',
+    icon: 'mdi-shield-crown',
+    to: '/tier-admin',
+  },
+  {
+    title: 'core.navigation.pluginBeta',
+    icon: 'mdi-flask-outline',
+    to: '/plugin-beta',
+  },
+  {
     title: 'core.navigation.apiServices',
     icon: 'mdi-api',
     to: '/api-services',

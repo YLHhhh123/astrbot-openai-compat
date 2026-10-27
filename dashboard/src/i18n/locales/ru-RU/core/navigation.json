@@ -1,4 +1,4 @@
-﻿{
+{
     "welcome": "Добро пожаловать",
     "dashboard": "Статистика",
     "platforms": "Боты",
@@ -14,6 +14,11 @@
     },
     "subagent": "Субагенты",
     "apiServices": "API-сервисы",
+    "tierAdmin": "Уровни админов",
+    "pluginBeta": "Бета-тест плагинов",
+    "moduleSwitches": "Переключатели модулей",
+    "adapterEditor": "Редактор адаптеров",
+    "userPortrait": "Портрет пользователя",
     "toolUse": "Инструменты MCP",
     "extension": "Плагины",
     "extensionTabs": {

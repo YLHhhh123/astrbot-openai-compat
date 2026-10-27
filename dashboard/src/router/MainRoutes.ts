@@ -135,6 +135,31 @@ const MainRoutes = {
       component: () => import('@/views/ApiServicesPage.vue')
     },
     {
+      name: 'UserPortrait',
+      path: '/user-portrait',
+      component: () => import('@/views/UserPortraitPage.vue')
+    },
+    {
+      name: 'AdapterEditor',
+      path: '/adapter-editor',
+      component: () => import('@/views/AdapterEditorPage.vue')
+    },
+    {
+      name: 'ModuleSwitches',
+      path: '/module-switches',
+      component: () => import('@/views/ModuleSwitchesPage.vue')
+    },
+    {
+      name: 'TierAdmin',
+      path: '/tier-admin',
+      component: () => import('@/views/TierAdminPage.vue')
+    },
+    {
+      name: 'PluginBeta',
+      path: '/plugin-beta',
+      component: () => import('@/views/PluginBetaPage.vue')
+    },
+    {
       name: 'Platforms',
       path: '/platforms',
       component: () => import('@/views/PlatformPage.vue')
