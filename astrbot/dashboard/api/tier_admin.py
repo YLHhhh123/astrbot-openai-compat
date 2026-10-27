@@ -128,9 +128,9 @@ class TierAdminUpdateRequest(BaseModel):
         default=None,
         description="层级 -> 指令白名单原文（留空=全部，'禁用'=全部禁止）",
     )
-    forbidden_plugins: dict[str, str] | None = Field(
+    forbidden_plugins: dict[str, str | list[str]] | None = Field(
         default=None,
-        description="层级 -> 禁止插件名，逗号分隔",
+        description="层级 -> 禁止插件名（逗号分隔字符串或名称数组）",
     )
 
 

@@ -118,9 +118,19 @@
 
           <!-- 自定义选择时显示插件列表 -->
           <div v-if="selectionMode === 'custom'" style="max-height: 300px; overflow-y: auto;">
-            <v-list v-if="pluginList.length > 0" density="compact">
+            <v-text-field
+              v-model="pluginSearchKeyword"
+              class="mb-2"
+              :placeholder="tm('pluginSetSelector.searchPlaceholder')"
+              prepend-inner-icon="mdi-magnify"
+              variant="outlined"
+              density="compact"
+              hide-details
+              clearable
+            />
+            <v-list v-if="filteredPluginList.length > 0" density="compact">
               <v-list-item
-                v-for="plugin in pluginList"
+                v-for="plugin in filteredPluginList"
                 :key="plugin.name"
                 rounded="md"
                 class="ma-1">
@@ -149,7 +159,9 @@
 
             <div v-else class="text-center py-8">
               <v-icon size="64" color="grey-lighten-1">mdi-puzzle-outline</v-icon>
-              <p class="text-grey mt-4">{{ tm('pluginSetSelector.noPlugins') }}</p>
+              <p class="text-grey mt-4">
+                {{ pluginSearchKeyword ? tm('pluginSetSelector.noSearchResults') : tm('pluginSetSelector.noPlugins') }}
+              </p>
             </div>
           </div>
         </div>
@@ -217,18 +229,31 @@ const isAllPlugins = computed(() => {
   return props.modelValue && props.modelValue.length === 1 && props.modelValue[0] === '*'
 })
 
+// 归一化：小写并去掉分隔符，使 quote pool / quote-pool / quotepool 等价
+function normalizeKeyword(text) {
+  return String(text || '').toLowerCase().replace(/[\s_\-./\\:：，,、|]+/g, '')
+}
+
+// 去掉常见的插件名前缀，允许只写短名（quote_pool -> astrbot_plugin_quote_pool）
+function stripPluginPrefix(text) {
+  return String(text || '').replace(/^(astrbot_plugin_|astrbot-|plugin_|astrbotplugin)/i, '')
+}
+
 const filteredPluginList = computed(() => {
   const keywords = [props.searchKeyword, pluginSearchKeyword.value]
-    .map(keyword => String(keyword || '').trim().toLowerCase())
+    .map(keyword => normalizeKeyword(keyword))
     .filter(Boolean)
   if (keywords.length === 0) return pluginList.value
   return pluginList.value.filter((plugin) => {
-    const searchableText = [
+    const displayName = pluginDisplayName(plugin)
+    const description = pluginDescription(plugin)
+    const haystack = normalizeKeyword([
       plugin.name,
-      pluginDisplayName(plugin),
-      pluginDescription(plugin)
-    ].filter(Boolean).join(' ').toLowerCase()
-    return keywords.every(keyword => searchableText.includes(keyword))
+      stripPluginPrefix(plugin.name),
+      displayName,
+      description
+    ].filter(Boolean).join(' '))
+    return keywords.every(keyword => haystack.includes(keyword))
   })
 })
 
