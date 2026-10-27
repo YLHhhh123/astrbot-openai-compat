@@ -212,11 +212,11 @@ def register_compat_modules() -> list[str]:
 
     # 旧插件目录仍在时不要抢路，让真实插件自己解析
     try:
-        from astrbot.core.utils.astrbot_path import get_astrbot_path
+        from astrbot.core.utils.astrbot_path import get_astrbot_plugin_path
 
         from pathlib import Path
 
-        legacy_dir = Path(str(get_astrbot_path())) / "data" / "plugins" / pkg_name
+        legacy_dir = Path(str(get_astrbot_plugin_path())) / pkg_name
         if legacy_dir.is_dir():
             return []
     except Exception:
@@ -245,3 +245,16 @@ def register_compat_modules() -> list[str]:
     setattr(pkg, "tier_api", alias)
     registered.append(api_name)
     return registered
+
+
+# Register the compatibility alias at import time, not in ``initialize()``.
+#
+# ``builtin_commands`` is the last plugin to load (its directory name sorts after
+# every ``data.plugins.*`` entry), so an alias registered from ``initialize()``
+# would only become available after third-party plugins had already been
+# imported. Those plugins import ``builtin_commands_extension.tier_api`` at
+# module level, so they would fall back to their local ``except ImportError``
+# implementations and silently lose the tiered-admin behaviour.
+#
+# Registering here guarantees the alias exists before the first plugin import.
+register_compat_modules()

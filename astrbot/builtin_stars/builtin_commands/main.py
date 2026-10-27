@@ -14,6 +14,7 @@ from astrbot.core.star.filter.command import GreedyStr
 
 from .commands import (
     AdminCommands,
+    BetaCommands,
     ConversationCommands,
     HelpCommand,
     NameCommand,
@@ -57,6 +58,7 @@ class Main(star.Star):
         self.perm = PermissionManager(self.config)
 
         self.admin_c = AdminCommands(self.context)
+        self.beta_c = BetaCommands(self.context)
         self.conversation_c = ConversationCommands(self.context)
         self.help_c = HelpCommand(self.context)
         self.name_c = NameCommand(self.context)
@@ -85,6 +87,20 @@ class Main(star.Star):
         if not await self.perm.check(event, "sid"):
             return
         await self.sid_c.sid(event)
+
+    @filter.command("内测")
+    async def beta_redeem(self, event: AstrMessageEvent, code: GreedyStr) -> None:
+        """兑换内测码。内测 <内测码>"""
+        if not await self.perm.check(event, "内测"):
+            return
+        await self.beta_c.redeem(event, str(code or ""))
+
+    @filter.command("内测状态")
+    async def beta_status(self, event: AstrMessageEvent) -> None:
+        """查看自己的内测资格"""
+        if not await self.perm.check(event, "内测状态"):
+            return
+        await self.beta_c.status(event)
 
     @filter.command("name")
     async def name(self, event: AstrMessageEvent, alias: GreedyStr) -> None:
@@ -282,4 +298,6 @@ class Main(star.Star):
         saved = self._save_config()
         await sync_tier_ids(self.config)
         note = "" if saved else "\n（注意：配置未能落盘，重启后可能失效）"
-        event.set_result(MessageEventResult().message(f"已取消 {target} 的管理员授权。{note}"))
+        event.set_result(
+            MessageEventResult().message(f"已取消 {target} 的管理员授权。{note}")
+        )

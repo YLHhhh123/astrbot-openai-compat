@@ -78,6 +78,7 @@ from .personas import legacy_router as legacy_personas_router
 from .platform import legacy_router as legacy_platform_router
 from .plugin_categories import router as plugin_categories_router
 from .tier_admin import router as tier_admin_router
+from .plugin_beta import router as plugin_beta_router
 from .plugins import legacy_router as legacy_plugins_router
 from .providers import legacy_router as legacy_providers_router
 from .router import API_V1_PREFIX, build_api_router
@@ -241,5 +242,6 @@ def create_dashboard_asgi_app(
     app.include_router(adapter_editor_router, prefix=API_V1_PREFIX)
     app.include_router(module_switches_router, prefix=API_V1_PREFIX)
     app.include_router(tier_admin_router, prefix=API_V1_PREFIX)
+    app.include_router(plugin_beta_router, prefix=API_V1_PREFIX)
     app.include_router(static_files_router)
     return app

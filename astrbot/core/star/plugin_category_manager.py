@@ -29,10 +29,23 @@ tag 识别规则：把 ``tags`` 拼成小写字符串做**子串包含**匹配�
 错判成功能类会让它在受限入口看起来可用、实际调不动。
 
 入口（entry）标识取事件的 ``_entry`` 扩展字段（供 HTTP 等特殊入口自报身份），
-未设置时回落到平台适配器名 ``event.get_platform_name()``
-（如 ``aiocqhttp`` / ``weixin_oc`` / ``webchat``）。
+未设置时取平台**实例** id（``event.get_platform_id()``，即机器人渠道的唯一标识），
+同时保留适配器类型（``platform_meta.name``）用于回退到类型级默认策略。
 
-存储位置：共享偏好（``sp``）的全局作用域，键名见 ``KEY_*`` 常量。
+每个机器人渠道允许的插件类别，配置在**该机器人自己的配置项**上
+（``astrbot_config["platform"][i]["allowed_plugin_categories"]``，
+即 WebUI「机器人设置」里的「插件类型限制」），实现按渠道单独设置。
+
+入口 → 允许类别的解析优先级（从高到低）：
+
+1. 机器人实例配置 ``allowed_plugin_categories``（非空列表才生效）
+2. sp 旧版入口策略，精确匹配入口 id
+3. sp 旧版入口策略，按适配器类型匹配（历史面板写入的键都是类型名）
+4. 内置默认策略，按适配器类型（如 weixin_oc 只放行功能性）
+5. 内置默认策略 ``default``
+
+共享偏好（``sp``）的旧版入口策略仍保留读取，兼容既有数据与
+openai_compat 等不挂在机器人上的特殊入口，键名见 ``KEY_*`` 常量。
 """
 
 from __future__ import annotations
@@ -90,9 +103,15 @@ EXTRA_ALLOWED_CATEGORIES_EXTRA_KEY = "_extra_allowed_categories"
 KEY_OVERRIDES = "plugin_category_overrides"
 KEY_ENTRY_POLICY = "entry_category_policy"
 
+# 机器人配置项上「允许的插件类别」字段名（WebUI 机器人设置 → 插件类型限制）。
+# 空列表 / 缺省 = 跟随类型级内置默认。
+PLATFORM_POLICY_FIELD = "allowed_plugin_categories"
+
 ALL_CATEGORIES: list[str] = [CATEGORY_FUNCTIONAL, CATEGORY_INTERACTIVE]
 
-# 内置默认入口策略。未列出的入口取 "default"，保证既有行为不变。
+# 内置默认入口策略，键为**适配器类型**（特殊入口自报的 _entry 也算类型级键）。
+# 未列出的类型取 "default"，保证既有行为不变。
+# 单个机器人渠道的个性化设置写在平台配置项的 PLATFORM_POLICY_FIELD 上，优先级更高。
 DEFAULT_ENTRY_POLICY: dict[str, list[str]] = {
     "default": list(ALL_CATEGORIES),
     # 个人微信（腾讯 openclaw-weixin + ClawBot）：互动类插件依赖的社交能力不可用
@@ -246,8 +265,49 @@ class PluginCategoryManager:
     # ------------------------------------------------------------------
 
     @staticmethod
+    def _astrbot_platform_configs() -> list[dict]:
+        """读取全局配置里的机器人（平台实例）配置列表。
+
+        延迟导入 + 容错：全局配置不可用（如单测 mock 环境）时返回空列表，
+        不影响既有默认策略生效。
+        """
+        try:
+            from astrbot.core import astrbot_config
+        except Exception:
+            return []
+        try:
+            platforms = astrbot_config.get("platform", []) or []
+        except Exception:
+            return []
+        return [item for item in platforms if isinstance(item, dict)]
+
+    @staticmethod
+    def get_instance_policies() -> dict[str, list[str]]:
+        """读取每个机器人渠道上显式配置的插件类别限制。
+
+        Returns:
+            ``{机器人 id: [类别...]}``；只收录非空配置（空列表 = 跟随默认）。
+        """
+        out: dict[str, list[str]] = {}
+        for item in PluginCategoryManager._astrbot_platform_configs():
+            bot_id = str(item.get("id") or "").strip()
+            if not bot_id:
+                continue
+            values = item.get(PLATFORM_POLICY_FIELD)
+            if not isinstance(values, (list, tuple)):
+                continue
+            cleaned = [
+                PluginCategoryManager.normalize_category(v)
+                for v in values
+                if str(v).strip()
+            ]
+            if cleaned:
+                out[bot_id] = list(dict.fromkeys(cleaned))
+        return out
+
+    @staticmethod
     async def get_entry_policy() -> dict[str, list[str]]:
-        """读取入口策略，与内置默认合并（用户配置优先）。"""
+        """读取旧版入口策略（sp），与内置默认合并（用户配置优先）。"""
         policy: dict[str, list[str]] = {
             entry: list(values) for entry, values in DEFAULT_ENTRY_POLICY.items()
         }
@@ -289,26 +349,56 @@ class PluginCategoryManager:
         return await PluginCategoryManager.get_entry_policy()
 
     @staticmethod
-    def entry_of(event: Any) -> str:
-        """解析事件所属入口标识。"""
+    def entry_identity(event: Any) -> tuple[str, str | None]:
+        """解析事件所属入口，返回 ``(入口标识, 适配器类型)``。
+
+        特殊入口（如 openai_compat）通过 ``_entry`` 自报身份，无类型信息；
+        普通平台事件的入口标识是机器人实例 id（``get_platform_id()``），
+        适配器类型（如 ``aiocqhttp`` / ``weixin_oc``）用于回退到类型级默认。
+        """
         try:
             declared = event.get_extra(ENTRY_EXTRA_KEY)
         except Exception:
             declared = None
         if isinstance(declared, str) and declared.strip():
-            return declared.strip()
-        try:
-            return str(event.get_platform_name() or "").strip() or "unknown"
-        except Exception:
-            return "unknown"
+            return declared.strip(), None
+        meta = getattr(event, "platform_meta", None)
+        entry_id = str(getattr(meta, "id", "") or "").strip()
+        entry_type = str(getattr(meta, "name", "") or "").strip()
+        return entry_id or entry_type or "unknown", entry_type or None
 
     @staticmethod
-    def allowed_categories(entry: str, policy: dict[str, list[str]]) -> set[str]:
-        """该入口允许的类别集合。"""
-        values = policy.get(entry)
-        if values is None:
-            values = policy.get("default", list(ALL_CATEGORIES))
-        return set(values)
+    def entry_of(event: Any) -> str:
+        """解析事件所属入口标识（兼容旧签名，取 ``entry_identity`` 的第一项）。"""
+        return PluginCategoryManager.entry_identity(event)[0]
+
+    @staticmethod
+    def allowed_categories(
+        entry: str,
+        policy: dict[str, list[str]],
+        *,
+        entry_type: str | None = None,
+        instance_policies: dict[str, list[str]] | None = None,
+    ) -> set[str]:
+        """解析某入口允许的插件类别集合。
+
+        优先级：机器人实例配置 > sp 旧版策略（入口 id → 适配器类型）
+        > 内置类型级默认 > 内置 ``default``。
+        """
+        # 1. 机器人设置里给该渠道单独配置的限制（非空才生效）
+        if instance_policies:
+            values = instance_policies.get(entry)
+            if values:
+                return set(values)
+        # 2/3. sp 旧版入口策略：先精确入口 id，再按适配器类型（历史面板写入的键是类型名）
+        for key in (entry, entry_type):
+            if key and key in policy:
+                return set(policy[key] or [])
+        # 4/5. 内置默认：先按适配器类型，再落 default
+        for key in (entry, entry_type, "default"):
+            if key and key in DEFAULT_ENTRY_POLICY:
+                return set(DEFAULT_ENTRY_POLICY[key])
+        return set(ALL_CATEGORIES)
 
     # ------------------------------------------------------------------
     # 综合判定
@@ -320,6 +410,7 @@ class PluginCategoryManager:
         return {
             "overrides": await PluginCategoryManager.get_category_overrides(),
             "policy": await PluginCategoryManager.get_entry_policy(),
+            "instance_policies": PluginCategoryManager.get_instance_policies(),
         }
 
     @staticmethod
@@ -332,11 +423,13 @@ class PluginCategoryManager:
         tags: Any = None,
         extra_plugins: set[str] | None = None,
         extra_categories: set[str] | None = None,
+        entry_type: str | None = None,
     ) -> bool:
         """判定插件在给定入口下是否可用。
 
         Args:
-            entry: 入口标识。
+            entry: 入口标识（机器人实例 id 或特殊入口自报的 ``_entry``）。
+            entry_type: 入口的适配器类型，用于回退到类型级默认策略。
             plugin_name: 插件名（``None`` 时视为系统插件，放行）。
             declared: 插件元数据声明的类别。
             context: :meth:`build_context` 的结果。
@@ -357,7 +450,10 @@ class PluginCategoryManager:
         if extra_categories and category in extra_categories:
             return True
         allowed = PluginCategoryManager.allowed_categories(
-            entry, context.get("policy") or {}
+            entry,
+            context.get("policy") or {},
+            entry_type=entry_type,
+            instance_policies=context.get("instance_policies") or {},
         )
         return category in allowed
 
@@ -411,7 +507,7 @@ class PluginCategoryManager:
         from astrbot.core.star.star import star_map
 
         context = await PluginCategoryManager.build_context()
-        entry = PluginCategoryManager.entry_of(event)
+        entry, entry_type = PluginCategoryManager.entry_identity(event)
         extra_plugins, extra_categories = (
             PluginCategoryManager.extra_allowed_from_event(event)
         )
@@ -432,6 +528,7 @@ class PluginCategoryManager:
                 continue
             if PluginCategoryManager.is_allowed(
                 entry=entry,
+                entry_type=entry_type,
                 plugin_name=plugin_name,
                 declared=getattr(plugin_meta, "category", None),
                 context=context,

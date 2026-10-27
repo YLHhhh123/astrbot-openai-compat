@@ -555,9 +555,7 @@ async def _ensure_persona_and_skills(
         forced = next(
             (
                 item
-                for item in getattr(
-                    plugin_context.persona_manager, "personas_v3", []
-                )
+                for item in getattr(plugin_context.persona_manager, "personas_v3", [])
                 if item.get("name") == forced_persona_id
             ),
             None,
@@ -567,9 +565,7 @@ async def _ensure_persona_and_skills(
             persona = forced
             use_webchat_special_default = False
         else:
-            logger.warning(
-                "强制人格 `%s` 不存在，回落到自动解析", forced_persona_id
-            )
+            logger.warning("强制人格 `%s` 不存在，回落到自动解析", forced_persona_id)
 
     set_persona_custom_error_message_on_event(
         event, extract_persona_custom_error_message_from_persona(persona)
@@ -651,6 +647,14 @@ async def _ensure_persona_and_skills(
         await PluginCategoryManager.filter_toolset_by_entry(req.func_tool, event)
     except Exception as exc:
         logger.warning("按入口裁剪 LLM 工具失败：%s", exc)
+
+    # 内测准入：未获授权的内测插件，其 LLM 工具不向模型声明。
+    try:
+        from astrbot.core.star.beta_gate import BetaGate
+
+        await BetaGate.filter_toolset(req.func_tool, event)
+    except Exception as exc:
+        logger.warning("按内测准入裁剪 LLM 工具失败：%s", exc)
 
     # 合并客户端传入的工具（HTTP 入口带 tools 时）：
     # 这些工具由**客户端执行**，服务端仅向模型声明、并在被调用时拦截回传。

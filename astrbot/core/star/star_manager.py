@@ -1112,6 +1112,20 @@ class PluginManager:
         inactivated_llm_tools = await sp.global_get("inactivated_llm_tools", [])
         alter_cmd = await sp.global_get("alter_cmd", {})
 
+        # Register the ``builtin_commands_extension.tier_api`` compatibility alias
+        # before any plugin is imported. Third-party plugins import it at module
+        # level, and the built-in ``builtin_commands`` plugin loads last, so an
+        # alias registered from its ``initialize()`` would arrive too late and
+        # those plugins would silently fall back to local permission stubs.
+        try:
+            from astrbot.builtin_stars.builtin_commands.tier_api import (
+                register_compat_modules,
+            )
+
+            register_compat_modules()
+        except Exception:
+            logger.debug("tier_api compatibility alias registration skipped.")
+
         plugin_modules = self._get_plugin_modules()
         if plugin_modules is None:
             return False, "未找到任何插件模块"

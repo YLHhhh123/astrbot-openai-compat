@@ -147,13 +147,37 @@ class WakingCheckStage(Stage):
         # 设置 sender 身份
         event.message_str = event.message_str.strip()
         api_key_allow_admin_role = event.get_extra("_api_key_allow_admin_role")
-        for admin_id in self.ctx.astrbot_config["admins_id"]:
-            if (
-                api_key_allow_admin_role is not False
-                and str(event.get_sender_id()) == admin_id
-            ):
-                event.role = "admin"
-                break
+        if api_key_allow_admin_role is not False:
+            sender = str(event.get_sender_id())
+            # 管理员判定：基于 builtin_commands_extension 的三级超管注册名（top/mid/normal_admin_ids），
+            # 取代 AstrBot 内置 admins_id。数据从 sp 全局存储读取（由 builtin 扩展每次 /op /setop 变更时同步）。
+            # 注册名支持 '@名字(ID)' / '@1(ID)' / 纯 ID 等格式，需提取纯数字 ID 后比较。
+            try:
+                import re as _re
+
+                from astrbot.api import sp
+
+                def _uid(entry: str) -> str:
+                    s = str(entry).strip()
+                    m = _re.search(r"\((\d{5,})\)", s)
+                    if m:
+                        return m.group(1)
+                    m = _re.search(r"\d{5,}", s)
+                    if m:
+                        return m.group(0)
+                    return s
+
+                _tier = await sp.global_get("builtin_commands_extension.tier_ids", {})
+                if isinstance(_tier, dict):
+                    for _key in ("top_admin_ids", "mid_admin_ids", "normal_admin_ids"):
+                        for _entry in _tier.get(_key, []):
+                            if sender == _uid(_entry):
+                                event.role = "admin"
+                                break
+                        if event.role == "admin":
+                            break
+            except Exception:
+                pass
 
         # 检查 wake
         wake_prefixes = self.ctx.astrbot_config["wake_prefix"]
@@ -228,7 +252,10 @@ class WakingCheckStage(Stage):
                 continue
 
             # --- lore-kernel-patch: 功能开关检查，被禁用的子功能直接跳过 ---
-            _orig = getattr(handler, "orig_module_path", None) or handler.handler_module_path
+            _orig = (
+                getattr(handler, "orig_module_path", None)
+                or handler.handler_module_path
+            )
             _feature = _extract_feature(_orig)
             if _feature:
                 _enabled = await _feature_enabled(_feature, event.get_group_id())
@@ -302,6 +329,29 @@ class WakingCheckStage(Stage):
             event,
             activated_handlers,
         )
+
+        # --- 内测准入：未获授权的内测插件，命令直接拦截并回自定义提示 ---
+        # 延迟导入：astrbot.core.star 包内部存在相互引用，顶层导入会形成环。
+        from astrbot.core.star.beta_gate import BetaGate
+
+        activated_handlers, beta_blocked = await BetaGate.filter_handlers(
+            event,
+            activated_handlers,
+        )
+        if beta_blocked and is_wake:
+            config = await BetaGate.get_config()
+            await event.send(
+                MessageChain().message(config["block_message"]),
+            )
+            logger.info(
+                "Beta gate intercepted command(s) of %s from user %s.",
+                ", ".join(name for name in beta_blocked if name),
+                event.get_sender_id(),
+            )
+            event.stop_event()
+            if event.is_wake:
+                self._umo_auto_name_recorder.schedule(event)
+            return
 
         event.set_extra("activated_handlers", activated_handlers)
         event.set_extra("handlers_parsed_params", handlers_parsed_params)

@@ -78,9 +78,9 @@ class SessionPluginManager:
         session_config = session_plugin_config.get(session_id, {})
         disabled_plugins = session_config.get("disabled_plugins", [])
 
-        # 入口（平台 / 特殊入口）+ 插件类别策略，一次取齐供本轮复用
+        # 入口（机器人实例 / 特殊入口）+ 插件类别策略，一次取齐供本轮复用
         category_context = await PluginCategoryManager.build_context()
-        entry = PluginCategoryManager.entry_of(event)
+        entry, entry_type = PluginCategoryManager.entry_identity(event)
         extra_plugins, extra_categories = (
             PluginCategoryManager.extra_allowed_from_event(event)
         )
@@ -109,13 +109,16 @@ class SessionPluginManager:
                 )
                 continue
 
-            # 入口类别过滤：功能性 / 互动性
+            # 入口类别过滤：功能性 / 互动性。
+            # tags 与工具裁剪侧保持同一判定来源，避免 handler 可跑、工具被裁的分裂行为。
             declared = getattr(plugin, "category", None)
             if not PluginCategoryManager.is_allowed(
                 entry=entry,
+                entry_type=entry_type,
                 plugin_name=plugin.name,
                 declared=declared,
                 context=category_context,
+                tags=getattr(plugin, "tags", None),
                 extra_plugins=extra_plugins,
                 extra_categories=extra_categories,
             ):

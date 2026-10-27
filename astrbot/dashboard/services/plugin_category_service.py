@@ -20,6 +20,7 @@ class PluginCategoryService:
     def _manager():
         from astrbot.core.star.plugin_category_manager import (
             CATEGORY_LABELS,
+            DEFAULT_CATEGORY,
             DEFAULT_ENTRY_POLICY,
             VALID_CATEGORIES,
             PluginCategoryManager,
@@ -30,18 +31,14 @@ class PluginCategoryService:
             VALID_CATEGORIES,
             CATEGORY_LABELS,
             DEFAULT_ENTRY_POLICY,
+            DEFAULT_CATEGORY,
         )
 
     async def list_plugins(self) -> list[dict[str, Any]]:
         """列出全部已加载插件及其类别判定结果。"""
         from astrbot.core.star.star import star_map
 
-        (
-            manager,
-            valid_categories,
-            labels,
-            _,
-        ) = self._manager()
+        manager, valid_categories, labels, _, _ = self._manager()
         overrides = await manager.get_category_overrides()
 
         result: list[dict[str, Any]] = []
@@ -71,7 +68,13 @@ class PluginCategoryService:
 
     async def get_meta(self) -> dict[str, Any]:
         """类别枚举与说明，供前端渲染。"""
-        manager, valid_categories, labels, default_policy = self._manager()
+        (
+            manager,
+            valid_categories,
+            labels,
+            default_policy,
+            default_category,
+        ) = self._manager()
         return {
             "categories": [
                 {
@@ -85,21 +88,21 @@ class PluginCategoryService:
                 }
                 for value in valid_categories
             ],
-            "default_category": "interactive",
+            "default_category": default_category,
             "default_entry_policy": default_policy,
             "entry_policy": await manager.get_entry_policy(),
         }
 
     async def set_plugin_category(self, plugin_name: str, category: str) -> str:
-        manager, _, _, _ = self._manager()
+        manager, _, _, _, _ = self._manager()
         return await manager.set_category(plugin_name, category)
 
     async def clear_plugin_category(self, plugin_name: str) -> bool:
-        manager, _, _, _ = self._manager()
+        manager, _, _, _, _ = self._manager()
         return await manager.clear_category(plugin_name)
 
     async def get_entry_policy(self) -> dict[str, Any]:
-        manager, valid_categories, labels, default_policy = self._manager()
+        manager, valid_categories, labels, default_policy, _ = self._manager()
         return {
             "policy": await manager.get_entry_policy(),
             "default_policy": default_policy,
@@ -110,7 +113,7 @@ class PluginCategoryService:
         }
 
     async def set_entry_policy(self, policy: dict[str, list[str]]) -> dict[str, Any]:
-        manager, valid_categories, labels, default_policy = self._manager()
+        manager, valid_categories, labels, default_policy, _ = self._manager()
         updated = await manager.set_entry_policy(policy)
         return {
             "policy": updated,
