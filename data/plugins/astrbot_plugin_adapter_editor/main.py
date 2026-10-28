@@ -26,7 +26,7 @@ from . import proposal as P
 
 @register(
     "astrbot_plugin_adapter_editor",
-    "WorkBuddy",
+    "YLHhhh123",
     "适配器编辑：AI 可提交平台适配器改动提案，管理员逐条审批后落盘。含不可改清单、配额、审计与回退。",
     "1.0.0",
 )

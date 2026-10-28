@@ -16,7 +16,7 @@ from astrbot.builtin_stars.builtin_commands.tier_api import load_tier_config
 
 @register(
     "astrbot_plugin_chat_commands",
-    "WorkBuddy",
+    "YLHhhh123",
     "会话指令集：插件管理、Provider/模型管理、人格与会话管理等扩展指令。权限分级由内置插件 builtin_commands 统一提供。",
     "1.0.0",
 )

@@ -2,5 +2,5 @@ name: astrbot_plugin_adapter_editor
 display_name: 适配器编辑
 desc: 允许 AI 提交平台适配器的改动提案（新建/修改），经管理员逐条审批后落盘。支持不可改清单、配额、审计日志与一键回退。默认关闭。
 version: v1.0.0
-author: WorkBuddy
+author: YLHhhh123
 category: functional

@@ -43,7 +43,7 @@ PLUGIN_DIR_NAME = "astrbot_plugin_context_pipeline"
 
 @register(
     PLUGIN_DIR_NAME,
-    "WorkBuddy",
+    "YLHhhh123",
     "上下文注入管线：按显式阶段顺序驱动群境/记忆/世界书/感知等注入插件，"
     "取代多插件各抢 on_llm_request 钩子的做法，支持逐阶段开关。",
     "1.0.0",
