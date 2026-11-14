@@ -147,6 +147,11 @@ class WakingCheckStage(Stage):
         # 设置 sender 身份
         event.message_str = event.message_str.strip()
         api_key_allow_admin_role = event.get_extra("_api_key_allow_admin_role")
+        # security-patch: HTTP 入口（OpenAI 兼容等）的 sender 不是平台协议层
+        # 真实身份（客户端可控），按 ID 匹配超管等于把管理员权限交给任何
+        # 持 Key 者——该入口一律不做管理员角色判定。
+        if str(event.get_extra("_entry") or "") == "openai_compat":
+            api_key_allow_admin_role = False
         if api_key_allow_admin_role is not False:
             sender = str(event.get_sender_id())
             # 管理员判定：基于 builtin_commands_extension 的三级超管注册名（top/mid/normal_admin_ids），

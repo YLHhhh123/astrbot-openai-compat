@@ -638,6 +638,10 @@ class OpenAICompatService:
             "message": prompt,
             "selected_provider": provider_id,
             "message_id": str(uuid.uuid4()),
+        }
+        # 服务端私有序列化元数据：经专用参数传递，绝不混入客户端可控的
+        # post_data（HTTP 入口会剥离客户端的一切 `_` 前缀键）。
+        entry_meta: dict[str, Any] = {
             # 入口标识：让插件类别策略识别这是 HTTP 入口（默认只放功能性插件）
             "_entry": ENTRY_OPENAI_COMPAT,
             # 按 Key 额外放行的插件（突破互动性插件在该入口的默认限制）
@@ -725,7 +729,10 @@ class OpenAICompatService:
                     chat_bridge=bridge,
                     send_json=send_json,
                     send_error=send_error,
-                    allow_admin_username=True,
+                    # security-patch: HTTP 入口不允许使用管理员保留用户名，
+                    # 也不允许触发任何管理员角色判定（sender 非平台真实身份）。
+                    allow_admin_username=False,
+                    entry_meta=entry_meta,
                 ),
                 timeout=timeout,
             )
@@ -773,16 +780,26 @@ class OpenAICompatService:
         """派生会话身份 ``(username, session_id)``。
 
         两条路径共用同一套派生规则，保证人格解析与记忆落在同一会话上。
+
+        安全约束（security-patch）：
+        - ``username`` 只取 Key 绑定身份或服务端默认值，**绝不采信客户端
+          ``metadata.username``**——聊天侧分级超管按 sender ID 判权，客户端
+          可控用户名等于把管理员身份交给任何持 Key 者。
+        - 客户端可控的 ``session_id``/``user`` 按 Key id 命名空间隔离，
+          防止不同 Key 共享/污染同一会话记忆。
         """
         config = self._load()
         metadata = body.get("metadata") if isinstance(body.get("metadata"), dict) else {}
         username = str(
-            metadata.get("username") or key.username or config.get("default_username")
+            key.username or config.get("default_username")
         ).strip() or DEFAULT_USERNAME
-        conversation_id = str(
-            metadata.get("session_id") or body.get("user") or f"openai-{key.id}"
+        raw_session = str(
+            metadata.get("session_id") or body.get("user") or ""
         ).strip()
-        return username, conversation_id or f"openai-{key.id}"
+        conversation_id = (
+            f"{key.id}:{raw_session}" if raw_session else f"openai-{key.id}"
+        )
+        return username, conversation_id
 
     @staticmethod
     def _virtual_umo(username: str, session_id: str) -> str:

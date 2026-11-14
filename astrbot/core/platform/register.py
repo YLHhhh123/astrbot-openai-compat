@@ -1,6 +1,6 @@
 from astrbot.core import logger
 
-from .platform_metadata import PlatformMetadata
+from .platform_metadata import PLATFORM_DISPLAY_NAMES, PlatformMetadata
 
 platform_registry: list[PlatformMetadata] = []
 """维护了通过装饰器注册的平台适配器"""
@@ -43,12 +43,18 @@ def register_platform_adapter(
         # Get the module path of the class being decorated
         module_path = cls.__module__
 
+        # 未显式指定中文名时，用内置映射兜底（只影响 WebUI 展示，不改注册名/类型名）
+        display_name = adapter_display_name or PLATFORM_DISPLAY_NAMES.get(
+            adapter_name,
+            adapter_name,
+        )
+
         pm = PlatformMetadata(
             name=adapter_name,
             description=desc,
             id=adapter_name,
             default_config_tmpl=default_config_tmpl,
-            adapter_display_name=adapter_display_name,
+            adapter_display_name=display_name,
             logo_path=logo_path,
             support_streaming_message=support_streaming_message,
             module_path=module_path,

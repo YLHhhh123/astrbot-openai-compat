@@ -27,7 +27,7 @@ from tenacity import (
 
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, MessageChain
-from astrbot.api.message_components import File, Image, Plain, Record, Video
+from astrbot.api.message_components import File, Image, Plain, Record, Reply, Video
 from astrbot.api.platform import AstrBotMessage, Group, PlatformMetadata
 from astrbot.core.platform.sources.qqofficial.qqofficial_chunked_upload import (
     QQOFFICIAL_CHUNKED_UPLOAD_THRESHOLD,
@@ -963,6 +963,22 @@ class QQOfficialMessageEvent(AstrMessageEvent):
                     file_source = file_path
                 elif i.url:
                     file_source = i.url
+            elif isinstance(i, Reply):
+                # 引用回复的正文有时只存在于 Reply 携带的文本里。若不提取，
+                # plain_text 会为空，整条消息在发送端被静默丢弃。
+                reply_text = (i.message_str or i.text or "").strip()
+                logger.info(
+                    "[QQOfficial-DIAG] Reply 组件: message_str=%r text=%r id=%r chain_len=%s",
+                    i.message_str, getattr(i, "text", None), getattr(i, "id", None),
+                    len(i.chain or []),
+                )
+                if not reply_text and i.chain:
+                    reply_text = "".join(
+                        seg.text for seg in i.chain
+                        if isinstance(seg, Plain) and getattr(seg, "text", "")
+                    ).strip()
+                if reply_text and not plain_text:
+                    plain_text = reply_text
             else:
                 logger.debug(f"qq_official 忽略 {i.type}")
         return (

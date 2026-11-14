@@ -111,6 +111,8 @@ class SessionPluginManager:
 
             # 入口类别过滤：功能性 / 互动性。
             # tags 与工具裁剪侧保持同一判定来源，避免 handler 可跑、工具被裁的分裂行为。
+            # 按名白名单 allowed_plugins 也在这里生效（同一 is_allowed 判定点），
+            # 目录名一并传入，兼容"目录名 != metadata name"的插件。
             declared = getattr(plugin, "category", None)
             if not PluginCategoryManager.is_allowed(
                 entry=entry,
@@ -121,6 +123,10 @@ class SessionPluginManager:
                 tags=getattr(plugin, "tags", None),
                 extra_plugins=extra_plugins,
                 extra_categories=extra_categories,
+                plugin_aliases=(
+                    getattr(plugin, "root_dir_name", None),
+                    getattr(plugin, "display_name", None),
+                ),
             ):
                 logger.debug(
                     f"Plugin {plugin.name} [{declared or 'default'}] is not allowed "

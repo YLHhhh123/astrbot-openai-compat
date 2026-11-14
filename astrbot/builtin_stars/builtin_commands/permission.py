@@ -64,7 +64,14 @@ _DISABLED_KEYWORDS = {"禁用", "禁用全部", "disabled", "off", "none", "deny
 # 高危指令硬限制：非超管角色（普通成员/群主/群管理）一律拒绝，白名单配置无法覆盖。
 # - plugin get：从网络安装任意插件 = 任意代码执行
 # - plugin off/on：禁用/启用任意插件（可把安全插件关掉造成 DoS）
-_HIGH_RISK_COMMANDS = {"plugin get", "plugin off", "plugin on", "dashboard_update"}
+# - provider：切换全局默认 LLM/TTS/STT Provider，影响所有会话（security-patch 补入）
+_HIGH_RISK_COMMANDS = {
+    "plugin get",
+    "plugin off",
+    "plugin on",
+    "dashboard_update",
+    "provider",
+}
 
 
 class PermissionManager:
@@ -118,6 +125,10 @@ class PermissionManager:
 
     async def resolve_role(self, event: AstrMessageEvent) -> str:
         """解析发送者在当前消息中的最高角色。"""
+        # security-patch: HTTP 入口（OpenAI 兼容等）的 sender 身份可被客户端
+        # 指定，不能作为分级管理员判定依据——一律按普通成员处理。
+        if str(event.get_extra("_entry") or "") == "openai_compat":
+            return "member"
         sender = str(event.get_sender_id())
         suid = extract_uid(sender)
 

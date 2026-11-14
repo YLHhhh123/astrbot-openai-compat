@@ -24,6 +24,8 @@ from astrbot.core.config.i18n_utils import ConfigMetadataI18n
 from astrbot.core.core_lifecycle import AstrBotCoreLifecycle
 from astrbot.core.db import BaseDatabase
 from astrbot.core.platform.register import platform_cls_map, platform_registry
+from astrbot.core.platform.platform_metadata import PLATFORM_DISPLAY_NAMES
+from astrbot.core.platform.send_rate_limiter import ensure_config_entry
 from astrbot.core.provider.register import provider_registry
 from astrbot.core.star.star import star_registry
 from astrbot.core.utils.astrbot_path import get_astrbot_plugin_data_path
@@ -820,9 +822,31 @@ class ConfigDisplayService:
             if not platform.default_config_tmpl:
                 continue
 
-            platform_default_tmpl[platform.name] = copy.deepcopy(
-                platform.default_config_tmpl
-            )
+            # 运行时注册的适配器键是英文注册名（如 aiocqhttp）。
+            # 若内置 config_template 里已有相同 type 的中文键，就合并过去：
+            # 中文键补齐运行时模板的字段，且不再暴露英文键，WebUI 下拉全是中文。
+            tmpl_copy = copy.deepcopy(platform.default_config_tmpl)
+            _merged_keys: set[str] = set()
+            for key, builtin_tmpl in list(platform_default_tmpl.items()):
+                if (
+                    isinstance(builtin_tmpl, dict)
+                    and builtin_tmpl.get("type") == platform.name
+                ):
+                    builtin_tmpl.update(
+                        {k: v for k, v in tmpl_copy.items() if k not in builtin_tmpl}
+                    )
+                    _merged_keys.add(key)
+            if not _merged_keys:
+                # 无同 type 内置键（如 webchat），直接用中文名当键，避免英文注册名露头
+                display_key = PLATFORM_DISPLAY_NAMES.get(
+                    platform.name,
+                    platform.name,
+                )
+                platform_default_tmpl[display_key] = tmpl_copy
+            else:
+                # 同名英文键若与内置键并存（键 != type），只保留内置中文键
+                platform_default_tmpl.pop(platform.name, None)
+
             if platform.config_metadata:
                 self.inject_platform_metadata_with_i18n(
                     platform,
@@ -844,9 +868,26 @@ class ConfigDisplayService:
             if provider.default_config_tmpl:
                 provider_default_tmpl[provider.type] = provider.default_config_tmpl
 
+        # 出站限速配置按机器人渠道存在，缺失时补默认值，保证 WebUI 能渲染出表单
+        for template in platform_default_tmpl.values():
+            if isinstance(template, dict):
+                ensure_config_entry(template)
+        # 注意：self.config 是 AstrBotConfig（内含 threading.Lock），不能整体 deepcopy，
+        # 这里只浅拷贝 dict 外壳，并逐项浅拷贝 platform 条目后补齐字段。
+        config_view = dict(self.config)
+        platform_view = []
+        for bot in self.config.get("platform", []):
+            if isinstance(bot, dict):
+                bot_copy = dict(bot)
+                ensure_config_entry(bot_copy)
+                platform_view.append(bot_copy)
+            else:
+                platform_view.append(bot)
+        config_view["platform"] = platform_view
+
         return {
             "metadata": metadata,
-            "config": self.config,
+            "config": config_view,
             "platform_i18n_translations": platform_i18n_translations,
         }
 
@@ -932,12 +973,22 @@ class ConfigDisplayService:
         platform_name: str,
         logo_token: str,
     ) -> None:
-        if platform_name not in platform_default_tmpl or not isinstance(
+        target_key = None
+        if platform_name in platform_default_tmpl and isinstance(
             platform_default_tmpl[platform_name],
             dict,
         ):
-            platform_default_tmpl[platform_name] = {}
-        platform_default_tmpl[platform_name]["logo_token"] = logo_token
+            target_key = platform_name
+        else:
+            # 注册名键被合并进同 type 的内置中文键，logo 挂到那个键上
+            for key, tmpl in platform_default_tmpl.items():
+                if isinstance(tmpl, dict) and tmpl.get("type") == platform_name:
+                    target_key = key
+                    break
+        if target_key is None:
+            target_key = platform_name
+            platform_default_tmpl[target_key] = {}
+        platform_default_tmpl[target_key]["logo_token"] = logo_token
 
     @staticmethod
     def inject_platform_metadata_with_i18n(
@@ -1254,14 +1305,18 @@ class BotConfigService:
                 continue
             if type_ and bot.get("type") != type_:
                 continue
-            bots.append(copy.deepcopy(bot))
+            bot_copy = copy.deepcopy(bot)
+            ensure_config_entry(bot_copy)
+            bots.append(bot_copy)
         return {"bots": bots}
 
     def get_bot(self, bot_id: str) -> dict:
         bot = self._find_bot(bot_id)
         if bot is None:
             raise ValueError(f"Bot {bot_id} not found")
-        return {"bot": copy.deepcopy(bot)}
+        bot_copy = copy.deepcopy(bot)
+        ensure_config_entry(bot_copy)
+        return {"bot": bot_copy}
 
     def get_bot_stats(self) -> dict:
         return self.core_lifecycle.platform_manager.get_all_stats()
@@ -1273,6 +1328,7 @@ class BotConfigService:
         if self._find_bot(bot_id) is not None:
             raise ValueError(f"Bot {bot_id} already exists")
         ensure_platform_webhook_config(config)
+        ensure_config_entry(config)
         self.config["platform"].append(config)
         save_config(self.config, self.config, is_core=True)
         await self.core_lifecycle.platform_manager.load_platform(config)
@@ -1281,6 +1337,7 @@ class BotConfigService:
         if config.get("id") != bot_id:
             raise ValueError("Bot id cannot be changed")
         ensure_platform_webhook_config(config)
+        ensure_config_entry(config)
         for idx, bot in enumerate(self.config.get("platform", [])):
             if bot.get("id") == bot_id:
                 self.config["platform"][idx] = config

@@ -21,6 +21,7 @@ from astrbot.core import LogBroker, LogManager
 from astrbot.core.astrbot_config_mgr import AstrBotConfigManager
 from astrbot.core.computer.computer_client import shutdown_local_booter
 from astrbot.core.config.default import VERSION
+from astrbot.core.config.platform_profile import apply_profiles_to_running_config
 from astrbot.core.conversation_mgr import ConversationManager
 from astrbot.core.cron import CronJobManager
 from astrbot.core.db import BaseDatabase
@@ -219,6 +220,15 @@ class AstrBotCoreLifecycle:
             self.db,
             self.persona_mgr,
         )
+
+        # 应用平台配置档案（data/config_platforms/*.json）到全局配置。
+        # 时机必须在 PlatformManager 创建之前：适配器实例直接从这个配置对象读自己的
+        # 条目，晚于此处就只能等下次启动才生效。档案机制只是便利层，内部已吞掉全部
+        # 异常（目录缺失、档案损坏都不会抛出），这里的 try 只是再兜一层底。
+        try:
+            apply_profiles_to_running_config(self.astrbot_config)
+        except Exception as e:
+            logger.warning(f"[platform_profile] 应用平台配置档案失败，已忽略: {e!s}")
 
         # 初始化平台管理器
         self.platform_manager = PlatformManager(self.astrbot_config, self.event_queue)

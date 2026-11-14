@@ -46,6 +46,22 @@ tag 识别规则：把 ``tags`` 拼成小写字符串做**子串包含**匹配�
 
 共享偏好（``sp``）的旧版入口策略仍保留读取，兼容既有数据与
 openai_compat 等不挂在机器人上的特殊入口，键名见 ``KEY_*`` 常量。
+
+另有**按插件名的白名单闸门** ``allowed_plugins``（同一机器人配置项上）：
+它是 ``allowed_plugin_categories`` 之外的第二个闸门，两者取**交集** ——
+既要在放行的类别里，也要在名字名单里。规则：
+
+1. ``allowed_plugins`` 是**非空 list** 时闸门生效，只有名单内的插件对该入口可用；
+2. ``[]`` / 缺失 / ``None`` / 只写了 ``"*"`` = 闸门不生效，行为与没有该字段时完全一致
+   （向后兼容是硬要求：存量配置没有任何 ``allowed_plugins`` 字段）；
+3. 名单外一律拒绝，且优先于 ``extra_plugins`` 这类按入口临时放行，
+   保证"白名单就是白名单"，不会被别的放行通道绕过。
+
+插件名字形：AstrBot 插件同时存在**目录名**（``StarMetadata.root_dir_name``，如
+``LLMPerception``）与 ``metadata.yaml`` 里的 **name**（如
+``astrbot_plugin_LLMPerception``），两者经常不一致，且写白名单的人只知道其中一个。
+因此匹配时同时接受 name / 目录名 / display_name（见 :meth:`plugin_matches_allowlist`），
+先精确匹配，再退化为大小写不敏感匹配。
 """
 
 from __future__ import annotations
@@ -106,6 +122,12 @@ KEY_ENTRY_POLICY = "entry_category_policy"
 # 机器人配置项上「允许的插件类别」字段名（WebUI 机器人设置 → 插件类型限制）。
 # 空列表 / 缺省 = 跟随类型级内置默认。
 PLATFORM_POLICY_FIELD = "allowed_plugin_categories"
+
+# 机器人配置项上「按插件名白名单」字段名。非空 list 才生效，与类别闸门取交集；
+# 空列表 / 缺省 / None / 只有 "*" = 不启用该闸门（保证存量配置行为不变）。
+PLATFORM_ALLOWLIST_FIELD = "allowed_plugins"
+# 白名单里写 "*" 表示"不限制"，与 plugin_set 的约定一致，避免误配把入口锁死。
+ALLOWLIST_WILDCARD = "*"
 
 ALL_CATEGORIES: list[str] = [CATEGORY_FUNCTIONAL, CATEGORY_INTERACTIVE]
 
@@ -306,6 +328,50 @@ class PluginCategoryManager:
         return out
 
     @staticmethod
+    def _normalize_allowlist(values: Any) -> list[str] | None:
+        """把平台条目上的 ``allowed_plugins`` 规整成去重保序的名字列表。
+
+        Args:
+            values: 平台条目该字段的原值，可能是 list / tuple / None / 其它类型。
+
+        Returns:
+            非空名字列表表示闸门生效；``None`` 表示闸门不启用（缺失、``None``、
+            空列表、非法类型，或名单里写了 ``"*"``）。
+        """
+        if not isinstance(values, (list, tuple)):
+            return None
+        names: list[str] = []
+        for value in values:
+            text = str(value).strip()
+            if not text:
+                continue
+            if text == ALLOWLIST_WILDCARD:
+                # "*" = 不限名单，闸门整体停用（与 plugin_set 语义保持一致）。
+                return None
+            names.append(text)
+        return list(dict.fromkeys(names)) or None
+
+    @staticmethod
+    def get_instance_allowlists() -> dict[str, list[str]]:
+        """读取每个机器人渠道上显式配置的按插件名白名单。
+
+        Returns:
+            ``{机器人 id: [插件名...]}``；只收录**生效**的白名单，未配置的渠道
+            不出现（表示该渠道没有按名闸门，完全沿用类别闸门）。
+        """
+        out: dict[str, list[str]] = {}
+        for item in PluginCategoryManager._astrbot_platform_configs():
+            bot_id = str(item.get("id") or "").strip()
+            if not bot_id:
+                continue
+            names = PluginCategoryManager._normalize_allowlist(
+                item.get(PLATFORM_ALLOWLIST_FIELD)
+            )
+            if names:
+                out[bot_id] = names
+        return out
+
+    @staticmethod
     async def get_entry_policy() -> dict[str, list[str]]:
         """读取旧版入口策略（sp），与内置默认合并（用户配置优先）。"""
         policy: dict[str, list[str]] = {
@@ -411,7 +477,50 @@ class PluginCategoryManager:
             "overrides": await PluginCategoryManager.get_category_overrides(),
             "policy": await PluginCategoryManager.get_entry_policy(),
             "instance_policies": PluginCategoryManager.get_instance_policies(),
+            "instance_allowlists": PluginCategoryManager.get_instance_allowlists(),
         }
+
+    @staticmethod
+    def plugin_matches_allowlist(
+        plugin_name: str | None,
+        allowlist: list[str] | tuple[str, ...],
+        aliases: Any = None,
+    ) -> bool:
+        """判定插件是否命中按插件名的白名单。
+
+        插件在 AstrBot 里存在两套名字，且经常不一致：
+
+        - ``metadata.yaml`` 的 ``name``（进入 ``StarMetadata.name``），
+          例如 ``astrbot_plugin_LLMPerception``；
+        - 插件**目录名**（``StarMetadata.root_dir_name``），例如 ``LLMPerception``。
+
+        写白名单的人只会知道其中一个，所以这里把 ``plugin_name`` 与 ``aliases``
+        （调用方传入 root_dir_name / display_name）并成一个候选集合一起比。
+        先精确匹配，再退化为大小写不敏感匹配，避免大小写手误导致"写了却不生效"。
+
+        Args:
+            plugin_name: 插件名（``StarMetadata.name``）。
+            allowlist: 白名单名字列表。
+            aliases: 该插件的其它名字（目录名、展示名等），可为 ``None``。
+
+        Returns:
+            ``True`` 表示命中白名单。
+        """
+        candidates = {str(plugin_name).strip()} if plugin_name else set()
+        if isinstance(aliases, (list, tuple, set, frozenset)):
+            candidates |= {str(item).strip() for item in aliases if item}
+        elif isinstance(aliases, str):
+            candidates.add(aliases.strip())
+        candidates.discard("")
+        if not candidates:
+            return False
+        names = {str(item).strip() for item in allowlist if str(item).strip()}
+        if not names:
+            return False
+        if candidates & names:
+            return True
+        lowered = {name.casefold() for name in names}
+        return any(candidate.casefold() in lowered for candidate in candidates)
 
     @staticmethod
     def is_allowed(
@@ -424,8 +533,12 @@ class PluginCategoryManager:
         extra_plugins: set[str] | None = None,
         extra_categories: set[str] | None = None,
         entry_type: str | None = None,
+        plugin_aliases: Any = None,
     ) -> bool:
         """判定插件在给定入口下是否可用。
+
+        两个闸门取**交集**：先过按名白名单 ``allowed_plugins``（非空才生效），
+        再过类别闸门 ``allowed_plugin_categories``，任一不放行即拒绝。
 
         Args:
             entry: 入口标识（机器人实例 id 或特殊入口自报的 ``_entry``）。
@@ -436,12 +549,21 @@ class PluginCategoryManager:
             tags: 插件元数据的 ``tags``，用于自动识别类别。
             extra_plugins: 额外放行的插件名（如 HTTP 入口按 Key 放开）。
             extra_categories: 额外放行的类别。
+            plugin_aliases: 该插件的其它名字（目录名 / 展示名），供按名白名单双匹配。
 
         Returns:
             ``True`` 表示允许在该入口运行。
         """
         if not plugin_name:
             return True
+        # 按名白名单闸门：名单外直接拒绝，且优先于 extra_plugins / extra_categories，
+        # 保证白名单不会被其它放行通道绕过（两者取交集）。
+        # context 里没有该键时按"未配置"处理，等价于闸门不生效，兼容旧调用方。
+        allowlist = (context.get("instance_allowlists") or {}).get(entry)
+        if allowlist and not PluginCategoryManager.plugin_matches_allowlist(
+            plugin_name, allowlist, plugin_aliases
+        ):
+            return False
         if extra_plugins and plugin_name in extra_plugins:
             return True
         category = PluginCategoryManager.resolve_category(
@@ -535,6 +657,11 @@ class PluginCategoryManager:
                 tags=getattr(plugin_meta, "tags", None),
                 extra_plugins=extra_plugins,
                 extra_categories=extra_categories,
+                # 目录名与展示名一并交给按名白名单，兼容"目录名 != metadata name"
+                plugin_aliases=(
+                    getattr(plugin_meta, "root_dir_name", None),
+                    getattr(plugin_meta, "display_name", None),
+                ),
             ):
                 continue
             try:

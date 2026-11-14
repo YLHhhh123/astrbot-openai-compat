@@ -1,5 +1,29 @@
 from dataclasses import dataclass
 
+PLATFORM_DISPLAY_NAMES: dict[str, str] = {
+    "aiocqhttp": "OneBot v11",
+    "qq_official": "QQ 官方机器人",
+    "qq_official_webhook": "QQ 官方机器人 (Webhook)",
+    "weixin_official_account": "微信公众号",
+    "weixin_oc": "个人微信",
+    "wecom": "企业微信应用",
+    "wecom_ai_bot": "企业微信智能机器人",
+    "lark": "飞书",
+    "dingtalk": "钉钉",
+    "telegram": "Telegram",
+    "discord": "Discord",
+    "misskey": "Misskey",
+    "slack": "Slack",
+    "kook": "KOOK",
+    "vocechat": "VoceChat",
+    "satori": "Satori",
+    "line": "LINE",
+    "matrix": "Matrix",
+    "webchat": "网页聊天",
+    "mattermost": "Mattermost",
+}
+"""适配器注册名（type）→ 中文展示名。品牌专名保留英文。"""
+
 
 @dataclass
 class PlatformMetadata:
@@ -13,7 +37,7 @@ class PlatformMetadata:
     default_config_tmpl: dict | None = None
     """平台的默认配置模板"""
     adapter_display_name: str | None = None
-    """显示在 WebUI 配置页中的平台名称，如空则是 name"""
+    """显示在 WebUI 配置页中的平台名称，如空则 name"""
     logo_path: str | None = None
     """平台适配器的 logo 文件路径（相对于插件目录）"""
 

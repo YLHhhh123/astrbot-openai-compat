@@ -32,9 +32,22 @@ from astrbot.core.utils.trace import TraceSpan
 from .astrbot_message import AstrBotMessage, Group
 from .message_session import MessageSesion, MessageSession  # noqa
 from .platform_metadata import PlatformMetadata
+from .send_rate_limiter import wrap_send_method
 
 
 class AstrMessageEvent(abc.ABC):
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        """自动为子类实现的 ``send`` 套上限速等待。
+
+        只包装 ``send``：一次 ``send`` 就是一条真正投递的消息；``send_streaming``
+        是同一条消息的增量编辑，不应重复计入条数。
+
+        Args:
+            **kwargs: 传给父类 ``__init_subclass__`` 的关键字参数。
+        """
+        super().__init_subclass__(**kwargs)
+        wrap_send_method(cls, "send")
+
     def __init__(
         self,
         message_str: str,

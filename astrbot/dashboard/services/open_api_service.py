@@ -167,6 +167,25 @@ class OpenApiService:
                     "username is reserved for an AstrBot administrator"
                 )
 
+        # security-patch: 分级超管名单（top/mid/normal_admin_ids）同样是预留
+        # 身份——聊天侧分级权限按 sender ID 判定，API Key 不得冒充。
+        if not allow_admin_username:
+            try:
+                from astrbot.api import sp as _sp
+
+                _tier = await _sp.global_get(
+                    "builtin_commands_extension.tier_ids", {}
+                )
+            except Exception:
+                _tier = {}
+            if isinstance(_tier, dict):
+                for _role_key in ("top_admin_ids", "mid_admin_ids", "normal_admin_ids"):
+                    for _entry in _tier.get(_role_key) or []:
+                        if str(effective_username) == str(_entry).strip():
+                            raise OpenApiServiceError(
+                                "username is reserved for an AstrBot administrator"
+                            )
+
         raw_session_id = post_data.get("session_id", post_data.get("conversation_id"))
         session_id = str(raw_session_id).strip() if raw_session_id is not None else ""
         if not session_id:
@@ -375,7 +394,16 @@ class OpenApiService:
         send_json: SendJson,
         send_error: Callable[[str, str], Awaitable[None]],
         allow_admin_username: bool = False,
+        entry_meta: dict | None = None,
     ) -> None:
+        """处理一次 API 聊天发送。
+
+        Args:
+            entry_meta: 服务端私有序列化元数据（``_`` 前缀键）。**只接受本参数**，
+                客户端 ``post_data`` 中的 ``_`` 前缀键一律剥离——它们会被
+                webchat 适配器写入 event extra，被插件类别策略/人格解析/管理员
+                角色判定采信，客户端可注入即等于策略绕过。
+        """
         message = post_data.get("message")
         if message is None:
             await send_error("Missing key: message", "INVALID_MESSAGE")
@@ -421,13 +449,15 @@ class OpenApiService:
         back_queue = webchat_queue_mgr.get_or_create_back_queue(message_id, session_id)
         try:
             chat_queue = webchat_queue_mgr.get_or_create_queue(session_id)
-            # post_data 里以下划线开头的键是调用方的私有元数据（如
-            # openai_compat 的 _forced_persona_id / _extra_allowed_plugins），
-            # 按约定透传给 webchat 适配器，由其写入 event extra。
+            # security-patch: 私有序列元数据只来自服务端 entry_meta 参数。
+            # 旧实现把 post_data 里所有 `_` 前缀键透传给 webchat 适配器，
+            # 客户端因此可以注入 `_entry` / `_extra_allowed_plugins` /
+            # `_client_tools` / `_forced_persona_id`，甚至覆盖服务端算出的
+            # `_api_key_allow_admin_role`，造成入口策略与管理员判定绕过。
             extra_meta = {
                 key: value
-                for key, value in post_data.items()
-                if key.startswith("_")
+                for key, value in (entry_meta or {}).items()
+                if isinstance(key, str) and key.startswith("_")
             }
             await chat_queue.put(
                 (
@@ -439,6 +469,7 @@ class OpenApiService:
                         "selected_model": selected_model,
                         "flags": flags,
                         "message_id": message_id,
+                        # 服务端安全字段放在透传元数据之后，客户端无法覆盖
                         "_api_key_allow_admin_role": allow_admin_username,
                         **extra_meta,
                     },

@@ -21,7 +21,9 @@ _AUTH_HEADER_PATTERN = re.compile(
     r"(?i)(?P<prefix>\bauthorization\s*:\s*bearer\s+)(?P<token>[A-Za-z0-9._\-]+)"
 )
 _BEARER_PATTERN = re.compile(r"(?i)(?P<prefix>\bbearer\s+)(?P<token>[A-Za-z0-9._\-]+)")
-_SK_PATTERN = re.compile(r"\bsk-[A-Za-z0-9]{16,}\b")
+# security-patch: 兼容含连字符的自定义前缀 Key（如 sk-astrbot-xxxx），
+# 原模式要求 sk- 后连续 16 位字母数字，漏掉该形态导致脱敏盲区。
+_SK_PATTERN = re.compile(r"\bsk-[A-Za-z0-9][A-Za-z0-9._-]{15,}[A-Za-z0-9]\b")
 
 
 def _redact_json_field(match: re.Match[str]) -> str:

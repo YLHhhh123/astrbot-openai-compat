@@ -10,6 +10,7 @@ from astrbot.core.utils.webhook_utils import ensure_platform_webhook_config
 
 from .platform import Platform, PlatformStatus
 from .register import platform_cls_map
+from .send_rate_limiter import ensure_config_entry, unregister_adapter
 from .sources.webchat.webchat_adapter import WebChatAdapter
 
 
@@ -84,17 +85,23 @@ class PlatformManager:
                     )
                     logger.error(traceback.format_exc())
         finally:
+            unregister_adapter(inst)
             await self._stop_platform_task(client_id)
 
     async def initialize(self) -> None:
         """初始化所有平台适配器"""
+        config_dirty = False
         for platform in self.platforms_config:
             try:
+                # 补齐出站限速配置，让 WebUI 机器人设置里能看到并编辑
+                config_dirty |= ensure_config_entry(platform)
                 if ensure_platform_webhook_config(platform):
-                    self.astrbot_config.save_config()
+                    config_dirty = True
                 await self.load_platform(platform)
             except Exception as e:
                 logger.error(f"Failed to initialize platform adapter {platform}: {e}")
+        if config_dirty:
+            self.astrbot_config.save_config()
 
         # 网页聊天
         webchat_inst = WebChatAdapter({}, self.settings, self.event_queue)

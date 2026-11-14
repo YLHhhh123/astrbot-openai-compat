@@ -14,7 +14,14 @@ from astrbot.core.utils.metrics import Metric
 from .astr_message_event import AstrMessageEvent
 from .astrbot_message import AstrBotMessage
 from .message_session import MessageSesion
-from .platform_metadata import PlatformMetadata
+from .platform_metadata import PLATFORM_DISPLAY_NAMES, PlatformMetadata
+from .send_rate_limiter import (
+    DEFAULT_SETTINGS,
+    SendRateLimiter,
+    ensure_config_entry,
+    register_adapter,
+    wrap_send_method,
+)
 
 
 class PlatformStatus(Enum):
@@ -36,6 +43,15 @@ class PlatformError:
 
 
 class Platform(abc.ABC):
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        """自动为子类实现的 ``send_by_session`` 套上限速等待。
+
+        Args:
+            **kwargs: 传给父类 ``__init_subclass__`` 的关键字参数。
+        """
+        super().__init_subclass__(**kwargs)
+        wrap_send_method(cls, "send_by_session")
+
     def __init__(self, config: dict, event_queue: Queue) -> None:
         super().__init__()
         # 平台配置
@@ -43,6 +59,12 @@ class Platform(abc.ABC):
         # 维护了消息平台的事件队列，EventBus 会从这里取出事件并处理。
         self._event_queue = event_queue
         self.client_self_id = uuid.uuid4().hex
+
+        # 出站限速器：配置来自本适配器的 platform 条目，WebUI 修改后随适配器重载生效
+        if isinstance(self.config, dict) and self.config.get("id"):
+            ensure_config_entry(self.config)
+        self.send_rate_limiter = SendRateLimiter(self.config)
+        register_adapter(self)
 
         # 平台运行状态
         self._status: PlatformStatus = PlatformStatus.PENDING
@@ -92,10 +114,16 @@ class Platform(abc.ABC):
     def get_stats(self) -> dict:
         """获取平台统计信息"""
         meta = self.meta()
+        limiter = getattr(self, "send_rate_limiter", None)
+        display_name = (
+            meta.adapter_display_name
+            or PLATFORM_DISPLAY_NAMES.get(meta.name)
+            or meta.name
+        )
         meta_info = {
             "id": meta.id,
             "name": meta.name,
-            "display_name": meta.adapter_display_name or meta.name,
+            "display_name": display_name,
             "description": meta.description,
             "support_streaming_message": meta.support_streaming_message,
             "support_proactive_message": meta.support_proactive_message,
@@ -103,7 +131,7 @@ class Platform(abc.ABC):
         return {
             "id": meta.id or self.config.get("id"),
             "type": meta.name,
-            "display_name": meta.adapter_display_name or meta.name,
+            "display_name": display_name,
             "status": self._status.value,
             "started_at": self._started_at.isoformat() if self._started_at else None,
             "error_count": len(self._errors),
@@ -115,6 +143,9 @@ class Platform(abc.ABC):
             if self.last_error
             else None,
             "unified_webhook": self.unified_webhook(),
+            "send_rate_limit": (
+                limiter.describe() if limiter is not None else dict(DEFAULT_SETTINGS)
+            ),
             "meta": meta_info,
         }
 

@@ -1146,6 +1146,28 @@ CONFIG_METADATA_2 = {
                         "type": "int",
                         "hint": "允许的最大连续失败次数，超过后停止重试。",
                     },
+                    "send_rate_limit": {
+                        "type": "object",
+                        "hint": "只作用于本机器人渠道的出站消息（回复与主动推送都算）。超限时消息会等待而不是丢弃。",
+                        "items": {
+                            "enable": {
+                                "type": "bool",
+                                "hint": "启用后，按下面的窗口和间隔限制本渠道的发送速率。",
+                            },
+                            "window_seconds": {
+                                "type": "int",
+                                "hint": "统计窗口长度（秒）。0 表示不限制窗口，只按最小间隔发送。",
+                            },
+                            "max_messages": {
+                                "type": "int",
+                                "hint": "每个窗口内最多发送的消息条数。0 表示不限制条数。",
+                            },
+                            "delay_seconds": {
+                                "type": "float",
+                                "hint": "相邻两条消息之间的最小间隔（秒）。0 表示不额外延时。",
+                            },
+                        },
+                    },
                 },
             },
             "platform_settings": {

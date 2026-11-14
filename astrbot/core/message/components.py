@@ -689,6 +689,12 @@ class Node(BaseMessageComponent):
                 # For File segments, we need to handle the file differently
                 d = await comp.to_dict()
                 data_content.append(d)
+            elif isinstance(comp, Video):
+                # For Video segments, use the async to_dict() which registers the
+                # file-service URL (callback_api_base) instead of a local path,
+                # so that a containerized platform client can fetch the file.
+                d = await comp.to_dict()
+                data_content.append(d)
             elif isinstance(comp, Node | Nodes):
                 # For Node segments, we recursively convert them to dict
                 d = await comp.to_dict()

@@ -407,7 +407,10 @@ class QQOfficialPlatformAdapter(Platform):
                 "markdown": MarkdownPayload(content=plain_text) if plain_text else None,
                 "msg_type": 2,
             }
-        if msg_id and not allow_group_proactive_send:
+        # 有 msg_id 时必须作为被动回复发送，否则 QQ 会判定为主动消息并返回
+        # 40034105 主动消息失败, 无权限。allow_group_proactive_send 只影响
+        # 无 msg_id 时是否放行，不应阻止 msg_id 写入 payload。
+        if msg_id:
             payload["msg_id"] = msg_id
         ret: Any = None
         send_helper = SimpleNamespace(bot=self.client)
