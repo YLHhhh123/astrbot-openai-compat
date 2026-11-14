@@ -43,7 +43,7 @@ PLUGIN_DIR_NAME = "astrbot_plugin_context_pipeline"
 
 @register(
     PLUGIN_DIR_NAME,
-    "YLHhhh123",
+    "WorkBuddy",
     "上下文注入管线：按显式阶段顺序驱动群境/记忆/世界书/感知等注入插件，"
     "取代多插件各抢 on_llm_request 钩子的做法，支持逐阶段开关。",
     "1.0.0",
@@ -582,11 +582,26 @@ class ContextPipeline(star.Star):
             "last_problems": self._last_error,
         }
 
+    @staticmethod
+    async def _require_tier_admin(event) -> bool:
+        """security-patch: 管线状态/重绑指令仅限分级超管（含群主/群管）。"""
+        try:
+            from astrbot.builtin_stars.builtin_commands.tier_api import (
+                get_level_by_id,
+            )
+
+            return await get_level_by_id(str(event.get_sender_id())) >= 1
+        except Exception:
+            return False
+
     @filter.command("上下文管线")
     async def cmd_status(self, event: AstrMessageEvent):
         """查看上下文注入管线的阶段状态"""
         from astrbot.api.event import MessageEventResult
 
+        if not await self._require_tier_admin(event):
+            event.set_result(MessageEventResult().message("权限不足：该指令仅限管理员使用。"))
+            return
         st = self.get_status()
         lines = [
             f"上下文注入管线：{'总开关开' if st['pipeline_enabled'] else '总开关关'}",
@@ -612,6 +627,9 @@ class ContextPipeline(star.Star):
         """重新绑定各阶段（目标插件刚启用/禁用后使用）"""
         from astrbot.api.event import MessageEventResult
 
+        if not await self._require_tier_admin(event):
+            event.set_result(MessageEventResult().message("权限不足：该指令仅限管理员使用。"))
+            return
         result = self.bind_all()
         ok = sum(1 for v in result.values() if v == "已绑定")
         lines = [f"已重新绑定 {ok}/{len(result)} 个阶段："]
